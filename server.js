@@ -92,14 +92,21 @@ async function createAdminUser() {
         console.log('Admin user already exists');
     }
 }
-
-
-
-
 createAdminUser();
 
 
 
+
+
+
+
+// =================== RUTA BASE / (ROOT) ===================
+app.get('/', (req, res) => {
+  res.status(200).json({
+  message: '✅ API DINSAC corriendo correctamente en Render. Usa las rutas /users, /products, etc.',
+ environment: process.env.NODE_ENV || 'production'
+ });
+});
 
 
 // Rutas de Usuario
