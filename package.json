@@ -1,0 +1,18 @@
+{
+  "name": "dinsac-backend",
+  "version": "1.0.0",
+  "description": "Backend para proyecto DINSA",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^4.18.2",
+    "mongoose": "^7.6.1",
+    "multer": "^1.4.5",
+    "pdfkit": "^0.13.0",
+    "socket.io": "^4.7.2"
+  }
+}
