@@ -66,8 +66,7 @@ app.use((req, res, next) => {
     // MongoDB Connection
 const dbURI = process.env.MONGODB_URI; // antes tenías localhost
 mongoose.connect(dbURI, {
-    useNewUrlParser: true,
-    useUnifiedTopology: true
+    
 })
 .then(() => console.log('✅ MongoDB Atlas connected'))
 .catch(err => console.error('❌ MongoDB Atlas connection error:', err));
