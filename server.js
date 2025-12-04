@@ -21,17 +21,19 @@ if (!fs.existsSync(uploadsDir)) {
 }
 require('dotenv').config();
 
+// 🔥 INICIALIZAR SOCKET.IO (esto faltaba)
+const io = new Server(server, {
+  cors: {
+    origin: [
+      '*',
+      'https://dinsac-admin.onrender.com',
+      'http://localhost:4200'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+  }
+});
 
 
-// Inicializar Socket.IO
-app.use(cors({
-  origin: [
-    'https://dinsac-admin.onrender.com',
-    'http://localhost:4200'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE'],
-  allowedHeaders: ['Content-Type']
-}));
 
 // Middleware - IMPORTANTE: el orden es crucial
 // CORS primero
@@ -1255,6 +1257,13 @@ app.post('/upload-chat', upload.single('archivo'), (req, res) => {
   res.json({ url: fileUrl });
 });
 
+
+
+
+
+
+
+
 // =================== SOCKET.IO ===================
 io.on('connection', (socket) => {
   console.log("🔵 Usuario conectado:", socket.id);
@@ -1301,6 +1310,9 @@ nombre: msg.nombre || (msg.clienteId.startsWith("anon-")
     console.log("🔴 Usuario desconectado:", socket.id);
   });
 });
+
+
+
 
 
 
