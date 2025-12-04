@@ -24,12 +24,14 @@ require('dotenv').config();
 
 
 // Inicializar Socket.IO
-const io = new Server(server, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+app.use(cors({
+  origin: [
+    'https://dinsac-admin.onrender.com',
+    'http://localhost:4200'
+  ],
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type']
+}));
 
 // Middleware - IMPORTANTE: el orden es crucial
 // CORS primero
