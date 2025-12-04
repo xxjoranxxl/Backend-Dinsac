@@ -37,11 +37,26 @@ const io = new Server(server, {
 
 // Middleware - IMPORTANTE: el orden es crucial
 // CORS primero
+// Middleware - IMPORTANTE: el orden es crucial
+// CORS primero
 app.use(cors({
-  origin: ['http://localhost:4200', 'http://localhost:3000','http://localhost:3200'], // acepta ambos
+  origin: [
+    'http://localhost:4200',
+    'http://localhost:3000',
+    'http://localhost:3200',
+    'https://dinsac-admin.onrender.com',  // 🔥 AGREGA TU FRONTEND DESPLEGADO
+    'https://backend-dinsac-hlf0.onrender.com' // 🔥 AGREGA TU BACKEND
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true // 🔥 IMPORTANTE para cookies/sesiones
 }));
+
+
+
+
+
+
 app.use(express.json({ limit: '60mb' })); // aceptar JSON grandes
 app.use(express.urlencoded({ extended: true, limit: '50mb' })); // aceptar formularios grandes
 app.use(express.json({ limit: '80mb' })); // muy importante para imágenes en base64
