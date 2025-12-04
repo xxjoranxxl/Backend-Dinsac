@@ -1267,7 +1267,7 @@ app.post('/upload-chat', upload.single('archivo'), (req, res) => {
     return res.status(400).json({ error: 'No se recibió ningún archivo' });
   }
   
-  const fileUrl = `http://localhost:3000/uploads/${req.file.filename}`;
+  const fileUrl = `https://backend-dinsac-hlf0.onrender.com/uploads/${req.file.filename}`;
   console.log('📤 Archivo subido:', fileUrl);
   res.json({ url: fileUrl });
 });
@@ -1433,7 +1433,7 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {  // ← 
     res.json({ 
       mensaje: `Banner ${tipo} guardado correctamente`, 
       banner,
-      url: `http://localhost:3000/uploads/${req.file.filename}` // URL completa
+      url: `https://backend-dinsac-hlf0.onrender.com/uploads/${req.file.filename}` // URL completa
     });
 
   } catch (error) {
@@ -1460,7 +1460,7 @@ app.get('/banner', async (req, res) => {
       
       const respuesta = banners.map(b => ({
         id: b._id,
-        image: `http://localhost:3000/uploads/${b.image}`,
+        image: `https://backend-dinsac-hlf0.onrender.com/uploads/${b.image}`,
         tipo: b.tipo
       }));
       
@@ -1480,7 +1480,7 @@ app.get('/banner', async (req, res) => {
     
     res.json({
       id: banner._id,
-      image: `http://localhost:3000/uploads/${banner.image}`,
+      image: `https://backend-dinsac-hlf0.onrender.com/uploads/${banner.image}`,
       tipo: banner.tipo
     });
 
