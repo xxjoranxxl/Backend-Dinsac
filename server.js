@@ -1373,24 +1373,22 @@ const bannerSchema = new mongoose.Schema({
 
 const Banner = mongoose.model('Banner', bannerSchema);
 
+// ====== CONFIGURACIÓN MULTER PARA BANNER (EN MEMORIA) ======
+const storageBanner = multer.memoryStorage(); // ✅ Cambiar a memoryStorage
 
-
-// ====== CONFIGURACIÓN MULTER PARA BANNER ======
-const storageBanner = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, uploadsDir); // carpeta /uploads
-  },
-  filename: function (req, file, cb) {
-    cb(null, 'banner_' + Date.now() + path.extname(file.originalname));
-  }
+const uploadBanner = multer({ 
+  storage: storageBanner,
+  limits: { fileSize: 5 * 1024 * 1024 } // 5MB límite
 });
 
-const uploadBanner = multer({ storage: storageBanner });
-
-
-app.post('/banner', uploadBanner.single('imagen'), async (req, res) => {
+// ✅ Cambiar 'imagen' por 'image' para que coincida con el frontend
+app.post('/banner', uploadBanner.single('image'), async (req, res) => {
   try {
-    const tipo = req.body.tipo; // "principal" o "home"
+    const tipo = req.body.tipo;
+    const orden = req.body.orden; // Para el carrusel
+    
+    console.log('📥 Recibido:', { tipo, orden, hasFile: !!req.file });
+    
     if (!req.file) {
       return res.status(400).json({ mensaje: "No se envió ninguna imagen" });
     }
@@ -1398,41 +1396,78 @@ app.post('/banner', uploadBanner.single('imagen'), async (req, res) => {
       return res.status(400).json({ mensaje: "Debes indicar el tipo de banner" });
     }
 
+    // ✅ Para carrusel, usar tipo + orden como ID
+    let bannerId = tipo;
+    if (tipo === 'carrusel' && orden !== undefined) {
+      bannerId = `carrusel_${orden}`;
+    }
+
     await Banner.findOneAndUpdate(
-      { _id: tipo },  // <-- usar el tipo como ID
+      { _id: bannerId },
       { 
-        image: req.file.buffer,
+        image: req.file.buffer, // ✅ Ahora sí tendrá buffer
         contentType: req.file.mimetype
       },
-      { upsert: true }
+      { upsert: true, new: true }
     );
 
-    res.json({ mensaje: `✅ Banner ${tipo} guardado en MongoDB` });
+    console.log('✅ Banner guardado:', bannerId);
+    res.json({ 
+      mensaje: `✅ Banner ${bannerId} guardado en MongoDB`,
+      id: bannerId 
+    });
 
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ mensaje: "Error interno" });
+    console.error('❌ Error en /banner:', error);
+    res.status(500).json({ 
+      mensaje: "Error interno",
+      error: error.message 
+    });
   }
 });
 
-
-
+// ✅ Mejorar el GET para soportar carrusel
 app.get('/banner', async (req, res) => {
-  const tipo = req.query.tipo; // "home" o "principal"
-  if (!tipo) return res.status(400).json({ mensaje: "Debes indicar el tipo de banner" });
+  try {
+    const tipo = req.query.tipo;
+    
+    if (!tipo) {
+      return res.status(400).json({ mensaje: "Debes indicar el tipo de banner" });
+    }
 
-  const banner = await Banner.findOne({ _id: tipo });
+    // Si pide carrusel, devolver todas las imágenes
+    if (tipo === 'carrusel') {
+      const banners = await Banner.find({ 
+        _id: { $regex: /^carrusel_/ } 
+      }).sort({ _id: 1 });
 
-  if (!banner || !banner.image) {
-    return res.status(404).send("No hay banner");
+      if (banners.length === 0) {
+        return res.status(404).json({ mensaje: "No hay imágenes en el carrusel" });
+      }
+
+      const imagenes = banners.map(b => ({
+        id: b._id,
+        image: `data:${b.contentType};base64,${b.image.toString('base64')}`
+      }));
+
+      return res.json({ imagenes });
+    }
+
+    // Para banners individuales
+    const banner = await Banner.findOne({ _id: tipo });
+
+    if (!banner || !banner.image) {
+      return res.status(404).json({ mensaje: "No hay banner" });
+    }
+
+    const base64 = `data:${banner.contentType};base64,${banner.image.toString('base64')}`;
+    res.json({ image: base64 });
+
+  } catch (error) {
+    console.error('❌ Error en GET /banner:', error);
+    res.status(500).json({ mensaje: "Error interno", error: error.message });
   }
-
-  const base64 = `data:${banner.contentType};base64,${banner.image.toString('base64')}`;
-
-  res.json({ image: base64 });
 });
-
-
 
  
 
