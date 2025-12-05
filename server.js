@@ -249,13 +249,13 @@ app.get('/clientes', async (req, res) => {
 
 
 // Registro de nuevo cliente
+// Registro de nuevo cliente
 app.post('/clientes/register', async (req, res) => {
     try {
         console.log('Datos recibidos para registro:', req.body);
         
         const { password, nombre, email, telefono, direccion } = req.body;
 
-        // Validaciones
         if (!password || !nombre || !email) {
             return res.status(400).json({ 
                 message: 'Password, nombre y email son obligatorios',
@@ -263,39 +263,16 @@ app.post('/clientes/register', async (req, res) => {
             });
         }
 
-        // Verificar si el email ya existe
         const existingCliente = await UserCliente.findOne({ email });
         if (existingCliente) {
             return res.status(400).json({ message: 'El email ya está registrado' });
         }
 
-// Configura tu transporte (puede ser Gmail)
-// =================== CONFIGURACIÓN DE CORREO ===================
-const transporterRegistro = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
-  auth: { 
-    user: 'monica.romeroz.2003@gmail.com', 
-    pass: 'xjflfqsxxynkpkqi'  // <- actualizamos aquí
-  },
-  tls: { rejectUnauthorized: false }
-});
+        // 🔐 HASHEAR LA CONTRASEÑA
+        const hashedPassword = await bcrypt.hash(password, 10);
 
-
-// Verificar configuración al iniciar
-transporter.verify(function(error, success) {
-  if (error) {
-    console.error('❌ Error en configuración de nodemailer:', error);
-  } else {
-    console.log('✅ Servidor de correo listo para enviar mensajes');
-  }
-});
-
-
-        // Crear nuevo cliente
         const newCliente = new UserCliente({ 
-            password, 
+            password: hashedPassword,  // ✅ Guardar hasheado
             nombre, 
             email, 
             telefono: telefono || '', 
@@ -303,6 +280,7 @@ transporter.verify(function(error, success) {
         });
 
         await newCliente.save();
+        
 
 // ENVIAR CORREO AL CLIENTE
 const mailOptions = {
@@ -355,9 +333,10 @@ transporter.sendMail(mailOptions, (error, info) => {
 });
 
 // Login de cliente
+// Login de cliente
 app.post('/clientes/login', async (req, res) => {
     try {
-        console.log('Intento de login:', req.body);
+        console.log('Intento de login de cliente:', req.body);
         
         const { email, password } = req.body;
 
@@ -366,40 +345,52 @@ app.post('/clientes/login', async (req, res) => {
             return res.status(400).json({ message: 'Email y password son obligatorios' });
         }
 
-        // Buscar cliente por email y password
-const user = await User.findOne({ username });
-if (user && await bcrypt.compare(password, user.password)) {
-    res.json({ message: 'Login successful', user });
-} else {
-    res.status(401).json({ message: 'Invalid credentials' });
-}
+        // ✅ Buscar cliente por email en UserCliente
+        const cliente = await UserCliente.findOne({ email });
         
-        if (cliente) {
-            // Login exitoso - devolver datos sin password
-            const clienteResponse = {
-                _id: cliente._id,
-                nombre: cliente.nombre,
-                email: cliente.email,
-                telefono: cliente.telefono,
-                direccion: cliente.direccion
-            };
-            
-            res.json({ 
-                message: 'Login exitoso', 
-                cliente: clienteResponse,
-                success: true
-            });
-        } else {
-            res.status(401).json({ 
+        if (!cliente) {
+            console.log('❌ Cliente no encontrado:', email);
+            return res.status(401).json({ 
                 message: 'Credenciales inválidas',
                 success: false
             });
         }
+
+        // ✅ Comparar password con bcrypt
+        const passwordValido = await bcrypt.compare(password, cliente.password);
+        
+        if (!passwordValido) {
+            console.log('❌ Password incorrecto para:', email);
+            return res.status(401).json({ 
+                message: 'Credenciales inválidas',
+                success: false
+            });
+        }
+
+        // ✅ Login exitoso
+        const clienteResponse = {
+            _id: cliente._id,
+            nombre: cliente.nombre,
+            email: cliente.email,
+            telefono: cliente.telefono,
+            direccion: cliente.direccion
+        };
+        
+        console.log('✅ Login exitoso:', clienteResponse.nombre);
+        
+        res.json({ 
+            message: 'Login exitoso', 
+            cliente: clienteResponse,
+            success: true
+        });
+
     } catch (err) {
-        console.error('Error en login:', err);
+        console.error('Error en login de cliente:', err);
         res.status(500).json({ message: 'Error en el servidor', error: err.message });
     }
 });
+
+
 
 
 // Eliminar cliente
