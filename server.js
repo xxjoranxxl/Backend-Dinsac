@@ -7,6 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
+const nodemailer = require('nodemailer');
 
 const app = express();
 const PORT = 3000;
@@ -21,37 +22,50 @@ if (!fs.existsSync(uploadsDir)) {
 }
 require('dotenv').config();
 
+
+
+const bcrypt = require('bcrypt');
+
+// Al registrar usuario
+const newUser = new User({ username, password: hashedPassword });
+
+// Al hacer login
+const user = await User.findOne({ username });
+if(user && await bcrypt.compare(password, user.password)) {
+  // Login exitoso
+}
+
+
+
+
+// Middleware - IMPORTANTE: el orden es crucial
+// CORS primero
+// Middleware - IMPORTANTE: el orden es crucial
+// CORS primero
+// ==== CORS GLOBAL ====
+const allowedOrigins = [
+  'http://localhost:4200',
+  'http://localhost:3000',
+  'http://localhost:3200',
+  'https://dinsac-admin.onrender.com',
+  'https://dinsac-cliente.onrender.com'
+];
+
 // 🔥 INICIALIZAR SOCKET.IO (esto faltaba)
 const io = new Server(server, {
   cors: {
-    origin: [
-      '*',
-      'https://dinsac-admin.onrender.com',
-      'http://localhost:4200'
-    ],
+    origin: allowedOrigins,
     methods: ['GET', 'POST', 'PUT', 'DELETE']
   }
 });
-
-
-// CORS primero
 app.use(cors({
-  origin: [
-    'http://localhost:4200',
-    'http://localhost:3000',
-    'http://localhost:3200',
-
-    // 🔥 FRONTEND ADMIN
-    'https://dinsac-admin.onrender.com',
-
-    // 🔥 FRONTEND CLIENTE (ESTE FALTABA)
-    'https://dinsac-cliente.onrender.com',
-
-    // 🔥 BACKEND RENDER
-    'https://backend-dinsac-hlf0.onrender.com'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
+  origin: function (origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    return callback(new Error("CORS bloqueado por seguridad: " + origin), false);
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
   credentials: true
 }));
 
@@ -60,9 +74,8 @@ app.use(cors({
 
 
 
-app.use(express.json({ limit: '60mb' })); // aceptar JSON grandes
-app.use(express.urlencoded({ extended: true, limit: '50mb' })); // aceptar formularios grandes
-app.use(express.json({ limit: '80mb' })); // muy importante para imágenes en base64
+app.use(express.json({ limit: '100mb' })); // aceptar JSON grandes
+app.use(express.urlencoded({ extended: true, limit: '100mb' })); // aceptar formularios grandes
 app.use('/uploads', express.static('uploads'));
 
 
@@ -105,16 +118,18 @@ const User = mongoose.model('User', userSchema);
 
 // Default Admin User
 async function createAdminUser() {
-    const admin = await User.findOne({ username: 'admin' });
-    if (!admin) {
-        const newAdmin = new User({ username: 'admin', password: 'admin123', role: 'admin' });
-        await newAdmin.save();
-        console.log('Admin user created');
-    } else {
-        console.log('Admin user already exists');
-    }
+  const admin = await User.findOne({ username: 'admin' });
+  if (!admin) {
+      const hashedPassword = await bcrypt.hash('admin123', 10);
+      const newAdmin = new User({ username: 'admin', password: hashedPassword, role: 'admin' });
+      await newAdmin.save();
+      console.log('Admin user created');
+  } else {
+      console.log('Admin user already exists');
+  }
 }
 createAdminUser();
+
 
 
 
@@ -143,12 +158,13 @@ app.get('/users', async (req, res) => {
 
 app.post('/login', async (req, res) => {
     const { username, password } = req.body;
-    const user = await User.findOne({ username, password });
-    if (user) {
-        res.json({ message: 'Login successful', user });
-    } else {
-        res.status(401).json({ message: 'Invalid credentials' });
-    }
+    const cliente = await UserCliente.findOne({ email });
+if (cliente && await bcrypt.compare(password, cliente.password)) {
+  // login exitoso
+} else {
+  res.status(401).json({ message: 'Credenciales incorrectas' });
+}
+
 });
 
 // Registro de Cliente
@@ -219,14 +235,27 @@ app.post('/clientes/register', async (req, res) => {
         if (existingCliente) {
             return res.status(400).json({ message: 'El email ya está registrado' });
         }
-        const nodemailer = require('nodemailer');
 
 // Configura tu transporte (puede ser Gmail)
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: 'monica.romeroz.2003@gmail.com', // <-- tu correo Gmail
-    pass: 'txapatbhiebaxbbg'   // <-- tu contraseña de app (¡no tu clave real!)
+// =================== CONFIGURACIÓN DE CORREO ===================
+const transporterRegistro = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
+  auth: { 
+    user: 'monica.romeroz.2003@gmail.com', 
+    pass: 'xjflfqsxxynkpkqi'  // <- actualizamos aquí
+  },
+  tls: { rejectUnauthorized: false }
+});
+
+
+// Verificar configuración al iniciar
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error('❌ Error en configuración de nodemailer:', error);
+  } else {
+    console.log('✅ Servidor de correo listo para enviar mensajes');
   }
 });
 
@@ -248,7 +277,7 @@ const mailOptions = {
   to: email,
   subject: 'Registro en la Web de DINSAC',
   text: `¡Hola ${nombre}! 
-  ¡Gracias por registrarte en la plataforma de DINSAC!
+  ¡Gracias por registrarte en la plataforma de DINSAC, Bienvenido!
 
 Ahora puedes explorar nuestros productos y realizar tus compras cuando gustes.  
 Si tienes dudas, escríbenos a soporte@dinsac.com
@@ -305,7 +334,12 @@ app.post('/clientes/login', async (req, res) => {
         }
 
         // Buscar cliente por email y password
-        const cliente = await UserCliente.findOne({ email, password });
+const user = await User.findOne({ username });
+if (user && await bcrypt.compare(password, user.password)) {
+    res.json({ message: 'Login successful', user });
+} else {
+    res.status(401).json({ message: 'Invalid credentials' });
+}
         
         if (cliente) {
             // Login exitoso - devolver datos sin password
@@ -365,14 +399,13 @@ app.delete('/clientes/:id', async (req, res) => {
 
 
 // =================== PRODUCTOS ===================
-const nodemailer = require('nodemailer');
 
 // =================== CONFIGURACIÓN DE CORREO ===================
 const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: 'monica.romeroz.2003@gmail.com',
-    pass: 'txapatbhiebaxbbg'
+    EMAIL_USER: 'monica.romeroz.2003@gmail.com',
+    EMAIL_PASS: 'xjflfqsxxynkpkqi'
   }
 });
 
@@ -649,7 +682,7 @@ app.post('/ordenes', async (req, res) => {
 
     // Enviar correo
     await transporter.sendMail({
-      from: 'tucorreo@gmail.com', // reemplaza por tu correo real
+      from: 'monica.romeroz.2003@gmail.com', // reemplaza por tu correo real
       to: email,
       subject: '🧾 Confirmación de tu compra en DINSAC, ¡Gracias por tu compra en DINSAC! 🎉',
       text: mensaje
@@ -746,79 +779,182 @@ const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 // ===================  GUARDAR COTIZACION  ===================
 
 // ✅ Endpoint corregido para guardar cotización y enviar correo
+// =================== GUARDAR COTIZACION ===================
+
+// =================== GUARDAR COTIZACION ===================
+// =================== GUARDAR COTIZACION ===================
 app.post('/cotizaciones', async (req, res) => {
   try {
-    
     console.log('📧 Procesando cotización...');
+    console.log('📦 Datos recibidos:', JSON.stringify(req.body, null, 2));
 
-    // 👉 Usar el número que viene del frontend o generar uno nuevo
-    let numeroCotizacion = req.body.numeroCotizacion;
-    
-    if (!numeroCotizacion) {
-      const total = await Cotizacion.countDocuments();
-      const numero = total + 1;
-      numeroCotizacion = `COT-${numero.toString().padStart(8, '0')}`;
+    const email = req.body.email;
+    const telefonoMovil = req.body.telefonoMovil;
+    const contacto = req.body.contacto;
+
+    if (!email && !telefonoMovil) {
+      return res.status(400).json({
+        message: 'Se requiere al menos email o teléfono',
+        success: false
+      });
     }
 
-    // 👉 Crear nueva cotización
-const nuevaCotizacion = new Cotizacion({
-  numeroCotizacion,
-  userId: req.body.userId,
-  nombre: req.body.nombre,
-  dniRuc: req.body.dniRuc,
-  email: req.body.email,
-  telefonoMovil: req.body.telefonoMovil,
-  mensaje: req.body.mensaje,
-  contacto: req.body.contacto || 'No especificado',  // ✅ SOLO UNO
-  productos: req.body.productos,
-  pdfBase64: req.body.pdfBase64,
-  fecha: new Date(),
-  estado: 'pendiente'
-});
-
-
-    await nuevaCotizacion.save();
-    console.log('✅ Cotización guardada en BD');
-
-    // 👉 Convertir el PDF base64 a buffer
-    const pdfBuffer = Buffer.from(req.body.pdfBase64, 'base64');
-
-    // 👉 Configurar correo
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: `${req.body.email}, ${process.env.EMAIL_OWNER || 'admin@tuempresa.com'}`,
-      subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
-      html: `
-        <h3>Cotización ${numeroCotizacion}</h3>
-        <p><strong>Cliente:</strong> ${req.body.nombre}</p>
-        <p><strong>Email:</strong> ${req.body.email}</p>
-        <p><strong>Teléfono:</strong> ${req.body.telefonoMovil}</p>
-        <p><strong>Mensaje:</strong> ${req.body.mensaje}</p>
-        <br>
-        <p>Adjuntamos la cotización en formato PDF.</p>
-        <p><em>Distribuidora Industrial S.A.C.</em></p>
-      `,
-      attachments: [
-        {
-          filename: `Cotizacion_${numeroCotizacion}.pdf`,
-          content: pdfBuffer,
-          contentType: 'application/pdf'
-        }
-      ]
+    // 🔹 Buscar datos del usuario si viene userId
+    let usuarioData = {
+      nombre: req.body.nombre || 'Cliente sin nombre',
+      email: email || '',
+      telefono: telefonoMovil || ''
     };
 
-    // 👉 Enviar correo
-    await transporter.sendMail(mailOptions);
-    console.log('✅ Correo enviado exitosamente');
+    if (req.body.userId) {
+      try {
+        const usuarioExiste = await UserCliente.findById(req.body.userId);
+        if (usuarioExiste) {
+          usuarioData = {
+            nombre: usuarioExiste.nombre,
+            email: usuarioExiste.email,
+            telefono: usuarioExiste.telefono || usuarioExiste.telefonoMovil
+          };
+          console.log('✅ Usuario encontrado:', usuarioData.nombre);
+        }
+      } catch (err) {
+        console.log('⚠️ userId inválido, usando datos del request');
+      }
+    }
+
+    // 🔹 Generar número de cotización ÚNICO con retry
+    let numeroCotizacion;
+    let intentos = 0;
+    const maxIntentos = 5;
+    
+    while (intentos < maxIntentos) {
+      const total = await Cotizacion.countDocuments();
+      numeroCotizacion = `COT-${(total + 1 + intentos).toString().padStart(8, '0')}`;
+      
+      // Verificar si ya existe
+      const existe = await Cotizacion.findOne({ numeroCotizacion });
+      
+      if (!existe) {
+        console.log('✅ Número único generado:', numeroCotizacion);
+        break;
+      }
+      
+      console.log('⚠️ Número duplicado, reintentando...', numeroCotizacion);
+      intentos++;
+    }
+
+    if (intentos >= maxIntentos) {
+      // Generar con timestamp si falla
+      numeroCotizacion = `COT-${Date.now().toString().slice(-8)}`;
+      console.log('⚠️ Usando timestamp:', numeroCotizacion);
+    }
+
+    // 🔹 Preparar datos
+    const datosCotizacion = {
+      numeroCotizacion,
+      userId: req.body.userId || null,
+      nombre: req.body.nombre || usuarioData.nombre,
+      dniRuc: req.body.dniRuc || '',
+      email: req.body.email || usuarioData.email,
+      telefonoMovil: req.body.telefonoMovil || usuarioData.telefono,
+      mensaje: req.body.mensaje || '',
+      contacto: req.body.contacto || 'No especificado',
+      productos: Array.isArray(req.body.productos) && req.body.productos.length > 0 
+        ? req.body.productos 
+        : [{
+            categoria: 'Sin categoría',
+            equipo: 'Producto no especificado',
+            cantidad: 0,
+            precioUnitario: 0
+          }],
+      pdfBase64: req.body.pdfBase64 || '',
+      fecha: new Date(),
+      estado: 'pendiente'
+    };
+
+    console.log('📋 Datos a guardar:', {
+      numeroCotizacion: datosCotizacion.numeroCotizacion,
+      nombre: datosCotizacion.nombre,
+      email: datosCotizacion.email,
+      productos: datosCotizacion.productos.length,
+      pdfBase64: datosCotizacion.pdfBase64 ? '[PDF PRESENTE]' : '[SIN PDF]'
+    });
+
+    // 🔹 Guardar cotización
+    const nuevaCotizacion = new Cotizacion(datosCotizacion);
+    await nuevaCotizacion.save();
+    console.log('✅ Cotización guardada con ID:', nuevaCotizacion._id);
+
+    // =================== ENVÍO DE CORREO ===================
+    console.log('\n🔍 === VERIFICACIÓN DE ENVÍO DE CORREO ===');
+    
+    const tieneEmail = !!datosCotizacion.email;
+    const tienePDF = !!datosCotizacion.pdfBase64;
+    const pdfValido = datosCotizacion.pdfBase64?.length > 100;
+
+    console.log('📧 Email:', datosCotizacion.email);
+    console.log('📄 PDF válido?', pdfValido);
+
+    if (tieneEmail && tienePDF && pdfValido) {
+      console.log('✅ Intentando enviar correo...');
+      
+      try {
+        const pdfBuffer = Buffer.from(datosCotizacion.pdfBase64, 'base64');
+        console.log('📄 Buffer creado:', pdfBuffer.length, 'bytes');
+
+        const mailOptions = {
+          from: 'monica.romeroz.2003@gmail.com',
+          to: `${datosCotizacion.email}, monica.romeroz.2003@gmail.com`,
+          subject: `Cotización ${numeroCotizacion} - DINSAC`,
+          html: `
+            <h3>Cotización ${numeroCotizacion}</h3>
+            <p><strong>Cliente:</strong> ${datosCotizacion.nombre}</p>
+            <p><strong>Email:</strong> ${datosCotizacion.email}</p>
+            <p><strong>Teléfono:</strong> ${datosCotizacion.telefonoMovil}</p>
+            <p><strong>DNI/RUC:</strong> ${datosCotizacion.dniRuc}</p>
+            <p><strong>Contacto preferido:</strong> ${datosCotizacion.contacto}</p>
+            <p><strong>Mensaje:</strong> ${datosCotizacion.mensaje}</p>
+            <br>
+            <p>Adjuntamos la cotización en formato PDF.</p>
+          `,
+          attachments: [{
+            filename: `Cotizacion_${numeroCotizacion}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }]
+        };
+
+        console.log('📧 Enviando a:', mailOptions.to);
+
+        const info = await transporter.sendMail(mailOptions);
+        
+        console.log('✅✅✅ CORREO ENVIADO EXITOSAMENTE ✅✅✅');
+        console.log('  - MessageId:', info.messageId);
+        console.log('  - Response:', info.response);
+        
+      } catch (emailError) {
+        console.error('❌ ERROR AL ENVIAR CORREO:');
+        console.error('  - Mensaje:', emailError.message);
+        console.error('  - Código:', emailError.code);
+        // No fallar la petición
+      }
+    } else {
+      console.log('⚠️ No se envió correo (condiciones no cumplidas)');
+    }
+
+    console.log('=== FIN VERIFICACIÓN DE CORREO ===\n');
 
     res.status(201).json({ 
-      message: `Cotización ${numeroCotizacion} guardada y enviada por correo exitosamente`,
+      message: `Cotización ${numeroCotizacion} guardada exitosamente`,
       numeroCotizacion,
+      cotizacionId: nuevaCotizacion._id,
       success: true
     });
 
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ ERROR CRÍTICO:', error.message);
+    console.error('Stack:', error.stack);
+    
     res.status(500).json({
       message: 'Error al procesar la cotización',
       error: error.message,
@@ -826,6 +962,14 @@ const nuevaCotizacion = new Cotizacion({
     });
   }
 });
+
+
+
+
+
+
+
+
 
 
 // 🔹 Contar cotizaciones pendientes
@@ -1285,7 +1429,9 @@ app.post('/upload-chat', upload.single('archivo'), (req, res) => {
 // =================== SOCKET.IO ===================
 io.on('connection', (socket) => {
   console.log("🔵 Usuario conectado:", socket.id);
-
+  socket.on('mensaje', data => {
+    io.emit('mensaje', data);
+ });
   socket.on('registrar', ({ clienteId, nombre }) => {
     socket.join(clienteId);
 
@@ -1385,9 +1531,12 @@ app.delete('/favorites/:userId/:productId', async (req, res) => {
 
 // =================== BANNER DE OFERTAS ===================
 
+// =================== BANNER DE OFERTAS ===================
+
 const bannerSchema = new mongoose.Schema({
   tipo: { type: String, required: true },
   image: { type: String, required: true },   // nombre del archivo
+  orden: { type: Number, default: 0 },       // ✅ NUEVO: para ordenar carrusel
   creado: { type: Date, default: Date.now }
 });
 
@@ -1406,13 +1555,13 @@ const storageBanner = multer.diskStorage({
 const uploadBanner = multer({ storage: storageBanner });
 
 // ====== SERVIR ARCHIVOS ESTÁTICOS ======
-// ¡IMPORTANTE! Agrega esto ANTES de tus rutas
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // ====== POST: SUBIR BANNER ======
-app.post('/banner', uploadBanner.single('image'), async (req, res) => {  // ← CAMBIÉ 'imagen' por 'image'
+app.post('/banner', uploadBanner.single('image'), async (req, res) => {
   try {
     const tipo = req.body.tipo;
+    const orden = req.body.orden ? parseInt(req.body.orden) : 0; // ✅ NUEVO
 
     if (!req.file) {
       return res.status(400).json({ mensaje: "No se envió ninguna imagen" });
@@ -1420,13 +1569,21 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {  // ← 
 
     console.log('📸 Archivo recibido:', req.file);
     console.log('📝 Tipo de banner:', tipo);
+    console.log('🔢 Orden:', orden);
 
-    // Eliminar banners anteriores del mismo tipo (opcional)
-    await Banner.deleteMany({ tipo });
+    // ✅ Para carrusel: eliminar solo el banner con el mismo orden
+    if (tipo === 'carrusel') {
+      await Banner.deleteMany({ tipo: 'carrusel', orden });
+      console.log(`🗑️ Banner carrusel orden ${orden} eliminado`);
+    } else {
+      // Para otros tipos: eliminar todos los anteriores
+      await Banner.deleteMany({ tipo });
+    }
 
     const banner = new Banner({
       tipo,
-      image: req.file.filename   // Solo guardamos el nombre del archivo
+      image: req.file.filename,
+      orden // ✅ Guardar el orden
     });
 
     await banner.save();
@@ -1436,7 +1593,7 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {  // ← 
     res.json({ 
       mensaje: `Banner ${tipo} guardado correctamente`, 
       banner,
-      url: `https://backend-dinsac-hlf0.onrender.com/uploads/${req.file.filename}` // URL completa
+      url: `https://backend-dinsac-hlf0.onrender.com/uploads/${req.file.filename}`
     });
 
   } catch (error) {
@@ -1445,7 +1602,6 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {  // ← 
   }
 });
 
-// ====== GET: OBTENER BANNERS ======
 // ====== GET: OBTENER BANNERS ======
 app.get('/banner', async (req, res) => {
   try {
@@ -1457,17 +1613,21 @@ app.get('/banner', async (req, res) => {
 
     console.log(`🔍 Buscando banners del tipo: ${tipo}`);
 
-    // 🔹 CASO 1: CARRUSEL (devolver array de múltiples imágenes)
+    // 🔹 CASO 1: CARRUSEL (devolver array ordenado)
     if (tipo === 'carrusel') {
-      const banners = await Banner.find({ tipo: 'carrusel' }).sort({ creado: -1 }).limit(3);
+      
+      const banners = await Banner.find({ tipo: 'carrusel' })
+        .sort({ orden: 1, creado: -1 }) // ✅ Ordenar por "orden" primero
+        .limit(3);
       
       const respuesta = banners.map(b => ({
         id: b._id,
         image: `https://backend-dinsac-hlf0.onrender.com/uploads/${b.image}`,
-        tipo: b.tipo
+        tipo: b.tipo,
+        orden: b.orden
       }));
       
-      console.log(`✅ ${respuesta.length} banners de carrusel encontrados`);
+      console.log(`✅ ${respuesta.length} banners de carrusel encontrados:`, respuesta);
       return res.json(respuesta);
     }
 
@@ -1493,18 +1653,34 @@ app.get('/banner', async (req, res) => {
   }
 });
 
+// ====== DELETE: ELIMINAR BANNER (OPCIONAL) ======
+app.delete('/banner/:id', async (req, res) => {
+  try {
+    const banner = await Banner.findByIdAndDelete(req.params.id);
+    
+    if (!banner) {
+      return res.status(404).json({ mensaje: "Banner no encontrado" });
+    }
 
+    // Eliminar archivo físico
+    const filePath = path.join(uploadsDir, banner.image);
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    console.log('🗑️ Banner eliminado:', banner);
+    res.json({ mensaje: "Banner eliminado correctamente" });
+
+  } catch (error) {
+    console.error('❌ Error eliminando banner:', error);
+    res.status(500).json({ mensaje: "Error interno", error: error.message });
+  }
+});
 
  
 
 // =================== FIN PRODUCTOS ===================
 
-// Iniciar servidor
 server.listen(PORT, () => {
-    console.log(`🚀 Servidor con Socket.IO corriendo en http://localhost:${PORT}`);
+  console.log(`Servidor corriendo en puerto ${PORT}`);
 });
-
-
-
-
-
