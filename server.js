@@ -30,7 +30,13 @@ const bcrypt = require('bcrypt');
 const newUser = new User({ username, password: hashedPassword });
 
 // Al hacer login
-const user = await User.findOne({ username });
+async function main() {
+  const user = await User.findOne({ username });
+  console.log(user);
+  // el resto de tu código que depende de await
+}
+
+main();
 if(user && await bcrypt.compare(password, user.password)) {
   // Login exitoso
 }
@@ -323,50 +329,39 @@ transporter.sendMail(mailOptions, (error, info) => {
 
 // Login de cliente
 app.post('/clientes/login', async (req, res) => {
-    try {
-        console.log('Intento de login:', req.body);
-        
-        const { email, password } = req.body;
+  try {
+    const { email, password } = req.body;
 
-        // Validaciones
-        if (!email || !password) {
-            return res.status(400).json({ message: 'Email y password son obligatorios' });
-        }
-
-        // Buscar cliente por email y password
-const user = await User.findOne({ username });
-if (user && await bcrypt.compare(password, user.password)) {
-    res.json({ message: 'Login successful', user });
-} else {
-    res.status(401).json({ message: 'Invalid credentials' });
-}
-        
-        if (cliente) {
-            // Login exitoso - devolver datos sin password
-            const clienteResponse = {
-                _id: cliente._id,
-                nombre: cliente.nombre,
-                email: cliente.email,
-                telefono: cliente.telefono,
-                direccion: cliente.direccion
-            };
-            
-            res.json({ 
-                message: 'Login exitoso', 
-                cliente: clienteResponse,
-                success: true
-            });
-        } else {
-            res.status(401).json({ 
-                message: 'Credenciales inválidas',
-                success: false
-            });
-        }
-    } catch (err) {
-        console.error('Error en login:', err);
-        res.status(500).json({ message: 'Error en el servidor', error: err.message });
+    if (!email || !password) {
+      return res.status(400).json({ message: 'Email y password son obligatorios' });
     }
+
+    const cliente = await UserCliente.findOne({ email });
+    if (!cliente) {
+      return res.status(401).json({ message: 'Credenciales inválidas' });
+    }
+
+    const isMatch = await bcrypt.compare(password, cliente.password);
+    if (!isMatch) {
+      return res.status(401).json({ message: 'Credenciales inválidas' });
+    }
+
+    // Login exitoso
+    const clienteResponse = {
+      _id: cliente._id,
+      nombre: cliente.nombre,
+      email: cliente.email,
+      telefono: cliente.telefono,
+      direccion: cliente.direccion
+    };
+
+    res.json({ message: 'Login exitoso', cliente: clienteResponse, success: true });
+  } catch (err) {
+    console.error('Error en login:', err);
+    res.status(500).json({ message: 'Error en el servidor', error: err.message });
+  }
 });
+
 
 
 // Eliminar cliente
