@@ -226,15 +226,21 @@ app.post('/clientes/register', async (req, res) => {
         const nodemailer = require('nodemailer');
 
 // Configura tu transporte (puede ser Gmail)
+// =================== CONFIGURACIÓN DE CORREO ===================
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false, // true para 465, false para otros puertos
   auth: {
-    user: 'monica.romeroz.2003@gmail.com', // <-- tu correo Gmail
-    pass: 'txapatbhiebaxbbg'   
+    user: 'monica.romeroz.2003@gmail.com',
+    pass: 'txapatbhiebaxbbg'
+  },
+  tls: {
+    rejectUnauthorized: false // ⚠️ Solo para desarrollo
   }
 });
 
-
+// Verificar configuración al iniciar
 transporter.verify(function(error, success) {
   if (error) {
     console.error('❌ Error en configuración de nodemailer:', error);
@@ -762,12 +768,12 @@ const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 // =================== GUARDAR COTIZACION ===================
 
 // =================== GUARDAR COTIZACION ===================
+// =================== GUARDAR COTIZACION ===================
 app.post('/cotizaciones', async (req, res) => {
   try {
     console.log('📧 Procesando cotización...');
     console.log('📦 Datos recibidos:', JSON.stringify(req.body, null, 2));
 
-    // ✅ Validación mínima
     const email = req.body.email;
     const telefonoMovil = req.body.telefonoMovil;
     const contacto = req.body.contacto;
@@ -802,14 +808,34 @@ app.post('/cotizaciones', async (req, res) => {
       }
     }
 
-    // 🔹 Generar número de cotización
-    const total = await Cotizacion.countDocuments();
-    const numeroCotizacion = req.body.numeroCotizacion || 
-      `COT-${(total + 1).toString().padStart(8, '0')}`;
+    // 🔹 Generar número de cotización ÚNICO con retry
+    let numeroCotizacion;
+    let intentos = 0;
+    const maxIntentos = 5;
+    
+    while (intentos < maxIntentos) {
+      const total = await Cotizacion.countDocuments();
+      numeroCotizacion = `COT-${(total + 1 + intentos).toString().padStart(8, '0')}`;
+      
+      // Verificar si ya existe
+      const existe = await Cotizacion.findOne({ numeroCotizacion });
+      
+      if (!existe) {
+        console.log('✅ Número único generado:', numeroCotizacion);
+        break;
+      }
+      
+      console.log('⚠️ Número duplicado, reintentando...', numeroCotizacion);
+      intentos++;
+    }
 
-    console.log('📄 Número de cotización generado:', numeroCotizacion);
+    if (intentos >= maxIntentos) {
+      // Generar con timestamp si falla
+      numeroCotizacion = `COT-${Date.now().toString().slice(-8)}`;
+      console.log('⚠️ Usando timestamp:', numeroCotizacion);
+    }
 
-    // 🔹 Preparar datos con VALORES POR DEFECTO
+    // 🔹 Preparar datos
     const datosCotizacion = {
       numeroCotizacion,
       userId: req.body.userId || null,
@@ -836,60 +862,36 @@ app.post('/cotizaciones', async (req, res) => {
       numeroCotizacion: datosCotizacion.numeroCotizacion,
       nombre: datosCotizacion.nombre,
       email: datosCotizacion.email,
-      telefono: datosCotizacion.telefonoMovil,
-      contacto: datosCotizacion.contacto,
       productos: datosCotizacion.productos.length,
       pdfBase64: datosCotizacion.pdfBase64 ? '[PDF PRESENTE]' : '[SIN PDF]'
     });
 
-    // 🔹 Crear y guardar cotización
+    // 🔹 Guardar cotización
     const nuevaCotizacion = new Cotizacion(datosCotizacion);
     await nuevaCotizacion.save();
     console.log('✅ Cotización guardada con ID:', nuevaCotizacion._id);
 
-    // =================== LOGS DETALLADOS PARA EMAIL ===================
-    console.log('\n🔍 === INICIANDO VERIFICACIÓN DE ENVÍO DE CORREO ===');
-    console.log('📧 Email del cliente:', datosCotizacion.email);
-    console.log('📄 Longitud del PDF:', datosCotizacion.pdfBase64?.length || 0);
-    console.log('✅ Tiene email?', !!datosCotizacion.email);
-    console.log('✅ Tiene PDF?', !!datosCotizacion.pdfBase64);
-    console.log('✅ PDF > 100 chars?', datosCotizacion.pdfBase64?.length > 100);
-
-    // Verificar condiciones
+    // =================== ENVÍO DE CORREO ===================
+    console.log('\n🔍 === VERIFICACIÓN DE ENVÍO DE CORREO ===');
+    
     const tieneEmail = !!datosCotizacion.email;
     const tienePDF = !!datosCotizacion.pdfBase64;
     const pdfValido = datosCotizacion.pdfBase64?.length > 100;
 
-    if (!tieneEmail) {
-      console.log('❌ NO SE ENVIARÁ CORREO: Falta email');
-    }
-    if (!tienePDF) {
-      console.log('❌ NO SE ENVIARÁ CORREO: Falta PDF');
-    }
-    if (!pdfValido) {
-      console.log('❌ NO SE ENVIARÁ CORREO: PDF muy corto o vacío');
-    }
+    console.log('📧 Email:', datosCotizacion.email);
+    console.log('📄 PDF válido?', pdfValido);
 
-    // Intentar enviar correo
     if (tieneEmail && tienePDF && pdfValido) {
-      console.log('\n✅ Todas las condiciones cumplidas, intentando enviar correo...');
+      console.log('✅ Intentando enviar correo...');
       
       try {
-        // Verificar configuración del transporter
-        console.log('📮 Verificando configuración de nodemailer...');
-        console.log('  - User:', 'monica.romeroz.2003@gmail.com');
-        console.log('  - Pass configurado?', !!transporter.options?.auth?.pass);
-
-        // Convertir PDF
-        console.log('📄 Convirtiendo PDF de base64 a buffer...');
         const pdfBuffer = Buffer.from(datosCotizacion.pdfBase64, 'base64');
-        console.log('  - Tamaño del buffer:', pdfBuffer.length, 'bytes');
+        console.log('📄 Buffer creado:', pdfBuffer.length, 'bytes');
 
-        // Preparar opciones del correo
         const mailOptions = {
           from: 'monica.romeroz.2003@gmail.com',
           to: `${datosCotizacion.email}, monica.romeroz.2003@gmail.com`,
-          subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
+          subject: `Cotización ${numeroCotizacion} - DINSAC`,
           html: `
             <h3>Cotización ${numeroCotizacion}</h3>
             <p><strong>Cliente:</strong> ${datosCotizacion.nombre}</p>
@@ -900,7 +902,6 @@ app.post('/cotizaciones', async (req, res) => {
             <p><strong>Mensaje:</strong> ${datosCotizacion.mensaje}</p>
             <br>
             <p>Adjuntamos la cotización en formato PDF.</p>
-            <p><em>Distribuidora Industrial S.A.C.</em></p>
           `,
           attachments: [{
             filename: `Cotizacion_${numeroCotizacion}.pdf`,
@@ -909,32 +910,22 @@ app.post('/cotizaciones', async (req, res) => {
           }]
         };
 
-        console.log('📧 Intentando enviar correo a:', mailOptions.to);
-        console.log('📎 Adjunto:', mailOptions.attachments[0].filename);
-        console.log('📏 Tamaño adjunto:', mailOptions.attachments[0].content.length, 'bytes');
+        console.log('📧 Enviando a:', mailOptions.to);
 
-        // ENVIAR CORREO
         const info = await transporter.sendMail(mailOptions);
         
-        console.log('\n✅✅✅ CORREO ENVIADO EXITOSAMENTE ✅✅✅');
+        console.log('✅✅✅ CORREO ENVIADO EXITOSAMENTE ✅✅✅');
         console.log('  - MessageId:', info.messageId);
         console.log('  - Response:', info.response);
-        console.log('  - Accepted:', info.accepted);
-        console.log('  - Rejected:', info.rejected);
         
       } catch (emailError) {
-        console.error('\n❌❌❌ ERROR AL ENVIAR CORREO ❌❌❌');
-        console.error('Tipo de error:', emailError.name);
-        console.error('Mensaje:', emailError.message);
-        console.error('Código:', emailError.code);
-        console.error('Comando:', emailError.command);
-        console.error('Response:', emailError.response);
-        console.error('Stack completo:', emailError.stack);
-        
-        // No fallar la petición por error de email
+        console.error('❌ ERROR AL ENVIAR CORREO:');
+        console.error('  - Mensaje:', emailError.message);
+        console.error('  - Código:', emailError.code);
+        // No fallar la petición
       }
     } else {
-      console.log('\n⚠️ No se envió correo porque no se cumplen todas las condiciones');
+      console.log('⚠️ No se envió correo (condiciones no cumplidas)');
     }
 
     console.log('=== FIN VERIFICACIÓN DE CORREO ===\n');
@@ -947,8 +938,7 @@ app.post('/cotizaciones', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌❌❌ ERROR CRÍTICO EN /cotizaciones ❌❌❌');
-    console.error('Mensaje:', error.message);
+    console.error('❌ ERROR CRÍTICO:', error.message);
     console.error('Stack:', error.stack);
     
     res.status(500).json({
