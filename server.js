@@ -26,6 +26,16 @@ require('dotenv').config();
 
 const bcrypt = require('bcrypt');
 
+// Al registrar usuario
+const newUser = new User({ username, password: hashedPassword });
+
+// Al hacer login
+const user = await User.findOne({ username });
+if(user && await bcrypt.compare(password, user.password)) {
+  // Login exitoso
+}
+
+
 
 
 // Middleware - IMPORTANTE: el orden es crucial
@@ -125,65 +135,6 @@ createAdminUser();
 
 
 
-createAdminUser();
-
-// 🔧 RUTA TEMPORAL PARA FORZAR RECREACIÓN DEL ADMIN
-app.post('/forzar-crear-admin', async (req, res) => {
-    try {
-        // Primero eliminar cualquier admin existente
-        await User.deleteMany({ username: 'admin' });
-        console.log('✅ Admins anteriores eliminados');
-
-        // Crear nuevo admin con password hasheado
-        const hashedPassword = await bcrypt.hash('admin123', 10);
-        const newAdmin = new User({ 
-            username: 'admin', 
-            password: hashedPassword, 
-            role: 'admin' 
-        });
-        
-        await newAdmin.save();
-        console.log('✅ Nuevo admin creado');
-
-        res.json({ 
-            message: '✅ Admin creado exitosamente',
-            admin: {
-                _id: newAdmin._id,
-                username: newAdmin.username,
-                role: newAdmin.role,
-                passwordHash: newAdmin.password.substring(0, 20) + '...'
-            }
-        });
-    } catch (err) {
-        console.error('❌ Error:', err);
-        res.status(500).json({ 
-            error: err.message,
-            stack: err.stack 
-        });
-    }
-});
-
-// 🔧 RUTA PARA VERIFICAR QUÉ HAY EN LA BASE DE DATOS
-app.get('/ver-usuarios', async (req, res) => {
-    try {
-        const users = await User.find({});
-        res.json({ 
-            total: users.length,
-            usuarios: users.map(u => ({
-                _id: u._id,
-                username: u.username,
-                role: u.role,
-                passwordLength: u.password.length,
-                passwordStart: u.password.substring(0, 10) + '...'
-            }))
-        });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
-    }
-});
-
-
-
 
 
 // =================== RUTA BASE / (ROOT) ===================
@@ -206,73 +157,30 @@ app.get('/users', async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-    try {
-        const { username, password } = req.body;
+    const { username, password } = req.body;
+    const cliente = await UserCliente.findOne({ email });
+if (cliente && await bcrypt.compare(password, cliente.password)) {
+  // login exitoso
+} else {
+  res.status(401).json({ message: 'Credenciales incorrectas' });
+}
 
-        if (!username || !password) {
-            return res.status(400).json({ message: 'Username y password son obligatorios' });
-        }
-
-        // Buscar usuario admin
-        const user = await User.findOne({ username });
-        
-        if (user && await bcrypt.compare(password, user.password)) {
-            res.json({ 
-                message: 'Login exitoso', 
-                user: {
-                    _id: user._id,
-                    username: user.username,
-                    role: user.role
-                },
-                success: true
-            });
-        } else {
-            res.status(401).json({ 
-                message: 'Credenciales incorrectas',
-                success: false
-            });
-        }
-    } catch (err) {
-        console.error('Error en login:', err);
-        res.status(500).json({ message: 'Error en el servidor', error: err.message });
-    }
 });
 
 // Registro de Cliente
 app.post('/register', async (req, res) => {
     const { username, password } = req.body;
     try {
-        if (!username || !password) {
-            return res.status(400).json({ message: 'Username y password son obligatorios' });
-        }
-
         const existingUser = await User.findOne({ username });
         if (existingUser) {
             return res.status(400).json({ message: 'El usuario ya existe' });
         }
 
-        // 🔐 Hash de la contraseña
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const newUser = new User({ 
-            username, 
-            password: hashedPassword,  // ✅ Guardar password hasheado
-            role: 'cliente' 
-        });
-        
+        const newUser = new User({ username, password, role: 'cliente' });
         await newUser.save();
-        
-        res.status(201).json({ 
-            message: 'Cliente registrado correctamente', 
-            user: {
-                _id: newUser._id,
-                username: newUser.username,
-                role: newUser.role
-            }
-        });
+        res.status(201).json({ message: 'Cliente registrado correctamente', user: newUser });
     } catch (err) {
-        console.error('Error registrando usuario:', err);
-        res.status(500).json({ message: 'Error al registrar cliente', error: err.message });
+        res.status(500).json({ message: 'Error al registrar cliente', error: err });
     }
 });
 
@@ -308,13 +216,13 @@ app.get('/clientes', async (req, res) => {
 
 
 // Registro de nuevo cliente
-// Registro de nuevo cliente
 app.post('/clientes/register', async (req, res) => {
     try {
         console.log('Datos recibidos para registro:', req.body);
         
         const { password, nombre, email, telefono, direccion } = req.body;
 
+        // Validaciones
         if (!password || !nombre || !email) {
             return res.status(400).json({ 
                 message: 'Password, nombre y email son obligatorios',
@@ -322,16 +230,39 @@ app.post('/clientes/register', async (req, res) => {
             });
         }
 
+        // Verificar si el email ya existe
         const existingCliente = await UserCliente.findOne({ email });
         if (existingCliente) {
             return res.status(400).json({ message: 'El email ya está registrado' });
         }
 
-        // 🔐 HASHEAR LA CONTRASEÑA
-        const hashedPassword = await bcrypt.hash(password, 10);
+// Configura tu transporte (puede ser Gmail)
+// =================== CONFIGURACIÓN DE CORREO ===================
+const transporterRegistro = nodemailer.createTransport({
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
+  auth: { 
+    user: 'monica.romeroz.2003@gmail.com', 
+    pass: 'xjflfqsxxynkpkqi'  // <- actualizamos aquí
+  },
+  tls: { rejectUnauthorized: false }
+});
 
+
+// Verificar configuración al iniciar
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error('❌ Error en configuración de nodemailer:', error);
+  } else {
+    console.log('✅ Servidor de correo listo para enviar mensajes');
+  }
+});
+
+
+        // Crear nuevo cliente
         const newCliente = new UserCliente({ 
-            password: hashedPassword,  // ✅ Guardar hasheado
+            password, 
             nombre, 
             email, 
             telefono: telefono || '', 
@@ -339,7 +270,6 @@ app.post('/clientes/register', async (req, res) => {
         });
 
         await newCliente.save();
-        
 
 // ENVIAR CORREO AL CLIENTE
 const mailOptions = {
@@ -392,10 +322,9 @@ transporter.sendMail(mailOptions, (error, info) => {
 });
 
 // Login de cliente
-// Login de cliente
 app.post('/clientes/login', async (req, res) => {
     try {
-        console.log('Intento de login de cliente:', req.body);
+        console.log('Intento de login:', req.body);
         
         const { email, password } = req.body;
 
@@ -404,52 +333,40 @@ app.post('/clientes/login', async (req, res) => {
             return res.status(400).json({ message: 'Email y password son obligatorios' });
         }
 
-        // ✅ Buscar cliente por email en UserCliente
-        const cliente = await UserCliente.findOne({ email });
+        // Buscar cliente por email y password
+const user = await User.findOne({ username });
+if (user && await bcrypt.compare(password, user.password)) {
+    res.json({ message: 'Login successful', user });
+} else {
+    res.status(401).json({ message: 'Invalid credentials' });
+}
         
-        if (!cliente) {
-            console.log('❌ Cliente no encontrado:', email);
-            return res.status(401).json({ 
+        if (cliente) {
+            // Login exitoso - devolver datos sin password
+            const clienteResponse = {
+                _id: cliente._id,
+                nombre: cliente.nombre,
+                email: cliente.email,
+                telefono: cliente.telefono,
+                direccion: cliente.direccion
+            };
+            
+            res.json({ 
+                message: 'Login exitoso', 
+                cliente: clienteResponse,
+                success: true
+            });
+        } else {
+            res.status(401).json({ 
                 message: 'Credenciales inválidas',
                 success: false
             });
         }
-
-        // ✅ Comparar password con bcrypt
-        const passwordValido = await bcrypt.compare(password, cliente.password);
-        
-        if (!passwordValido) {
-            console.log('❌ Password incorrecto para:', email);
-            return res.status(401).json({ 
-                message: 'Credenciales inválidas',
-                success: false
-            });
-        }
-
-        // ✅ Login exitoso
-        const clienteResponse = {
-            _id: cliente._id,
-            nombre: cliente.nombre,
-            email: cliente.email,
-            telefono: cliente.telefono,
-            direccion: cliente.direccion
-        };
-        
-        console.log('✅ Login exitoso:', clienteResponse.nombre);
-        
-        res.json({ 
-            message: 'Login exitoso', 
-            cliente: clienteResponse,
-            success: true
-        });
-
     } catch (err) {
-        console.error('Error en login de cliente:', err);
+        console.error('Error en login:', err);
         res.status(500).json({ message: 'Error en el servidor', error: err.message });
     }
 });
-
-
 
 
 // Eliminar cliente
@@ -485,14 +402,11 @@ app.delete('/clientes/:id', async (req, res) => {
 
 // =================== CONFIGURACIÓN DE CORREO ===================
 const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false,
+  service: 'gmail',
   auth: {
-    user: 'monica.romeroz.2003@gmail.com',  // ✅ 'user' no 'EMAIL_USER'
-    pass: 'xjflfqsxxynkpkqi'  // ✅ 'pass' no 'EMAIL_PASS'
-  },
-  tls: { rejectUnauthorized: false }
+    EMAIL_USER: 'monica.romeroz.2003@gmail.com',
+    EMAIL_PASS: 'xjflfqsxxynkpkqi'
+  }
 });
 
 // =================== PRODUCTOS ===================
