@@ -44,12 +44,19 @@ app.use(cors({
     'http://localhost:4200',
     'http://localhost:3000',
     'http://localhost:3200',
-    'https://dinsac-admin.onrender.com',  // 🔥 AGREGA TU FRONTEND DESPLEGADO
-    'https://backend-dinsac-hlf0.onrender.com' // 🔥 AGREGA TU BACKEND
+
+    // 🔥 FRONTEND ADMIN
+    'https://dinsac-admin.onrender.com',
+
+    // 🔥 FRONTEND CLIENTE (ESTE FALTABA)
+    'https://dinsac-cliente.onrender.com',
+
+    // 🔥 BACKEND RENDER
+    'https://backend-dinsac-hlf0.onrender.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-  credentials: true // 🔥 IMPORTANTE para cookies/sesiones
+  credentials: true
 }));
 
 
