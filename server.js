@@ -32,8 +32,9 @@ const io = new Server(server, {
 
 // Middleware - IMPORTANTE: el orden es crucial
 // CORS primero
+
 app.use(cors({
-  origin: ['http://localhost:4200', 'http://localhost:3000','http://localhost:3200'], // acepta ambos
+  origin: ['http://localhost:4200', 'https://backend-dinsac-hlf0.onrender.com/','http://localhost:3200'], // acepta ambos
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
@@ -1231,7 +1232,7 @@ app.post('/upload-chat', upload.single('archivo'), (req, res) => {
     return res.status(400).json({ error: 'No se recibió ningún archivo' });
   }
   
-  const fileUrl = `http://localhost:3000/uploads/${req.file.filename}`;
+  const fileUrl = `https://backend-dinsac-hlf0.onrender.com//uploads/${req.file.filename}`;
   console.log('📤 Archivo subido:', fileUrl);
   res.json({ url: fileUrl });
 });
