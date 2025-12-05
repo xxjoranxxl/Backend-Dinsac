@@ -755,58 +755,53 @@ const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 app.post('/cotizaciones', async (req, res) => {
   try {
     console.log('📧 Procesando cotización...');
-    console.log('📦 req.body:', JSON.stringify(req.body, null, 2));
-    console.log('📦 req.headers:', JSON.stringify(req.headers, null, 2));
+    console.log('📦 Datos recibidos:', JSON.stringify(req.body, null, 2));
 
-    // ✅ VALIDACIONES DETALLADAS
-    if (!req.body) {
-      console.error('❌ req.body es undefined o null');
+    // ✅ VALIDACIÓN FLEXIBLE
+    if (!req.body || Object.keys(req.body).length === 0) {
       return res.status(400).json({
         message: 'No se recibieron datos',
         success: false
       });
     }
 
-    if (!req.body.userId) {
-      console.error('❌ userId faltante. req.body:', req.body);
-      return res.status(400).json({
-        message: 'El userId es obligatorio',
-        receivedData: req.body,
-        success: false
-      });
-    }
+    // 🔹 HACER userId OPCIONAL (no obligatorio)
+    let usuarioData = {
+      nombre: req.body.nombre || 'Cliente Anónimo',
+      email: req.body.email || '',
+      telefono: req.body.telefonoMovil || ''
+    };
 
-    // Verificar que el userId existe en la BD
-    const usuarioExiste = await UserCliente.findById(req.body.userId);
-    if (!usuarioExiste) {
-      console.error('❌ Usuario no encontrado con ID:', req.body.userId);
-      return res.status(404).json({
-        message: 'Usuario no encontrado',
-        userId: req.body.userId,
-        success: false
-      });
+    // Si viene userId, intentar obtener datos del usuario
+    if (req.body.userId) {
+      try {
+        const usuarioExiste = await UserCliente.findById(req.body.userId);
+        if (usuarioExiste) {
+          usuarioData = {
+            nombre: usuarioExiste.nombre,
+            email: usuarioExiste.email,
+            telefono: usuarioExiste.telefono || usuarioExiste.telefonoMovil
+          };
+          console.log('✅ Usuario encontrado:', usuarioData.nombre);
+        }
+      } catch (err) {
+        console.log('⚠️ userId inválido, usando datos del request');
+      }
     }
-
-    console.log('✅ Usuario encontrado:', usuarioExiste.nombre);
 
     // 👉 Generar número de cotización
-    let numeroCotizacion = req.body.numeroCotizacion;
-    
-    if (!numeroCotizacion) {
-      const total = await Cotizacion.countDocuments();
-      const numero = total + 1;
-      numeroCotizacion = `COT-${numero.toString().padStart(8, '0')}`;
-      console.log('📄 Número de cotización generado:', numeroCotizacion);
-    }
+    const total = await Cotizacion.countDocuments();
+    const numeroCotizacion = req.body.numeroCotizacion || 
+      `COT-${(total + 1).toString().padStart(8, '0')}`;
 
-    // 👉 Preparar datos de cotización
+    // 👉 Preparar datos de cotización con valores por defecto
     const datosCotizacion = {
       numeroCotizacion,
-      userId: req.body.userId,
-      nombre: req.body.nombre || usuarioExiste.nombre,
+      userId: req.body.userId || null, // ⭐ Permitir null
+      nombre: req.body.nombre || usuarioData.nombre,
       dniRuc: req.body.dniRuc || '',
-      email: req.body.email || usuarioExiste.email,
-      telefonoMovil: req.body.telefonoMovil || usuarioExiste.telefono || '',
+      email: req.body.email || usuarioData.email,
+      telefonoMovil: req.body.telefonoMovil || usuarioData.telefono,
       mensaje: req.body.mensaje || '',
       contacto: req.body.contacto || 'No especificado',
       productos: Array.isArray(req.body.productos) ? req.body.productos : [],
@@ -822,15 +817,15 @@ app.post('/cotizaciones', async (req, res) => {
 
     // 👉 Crear y guardar cotización
     const nuevaCotizacion = new Cotizacion(datosCotizacion);
-    
     await nuevaCotizacion.save();
     console.log('✅ Cotización guardada con ID:', nuevaCotizacion._id);
 
-    // 👉 Enviar correo (solo si hay PDF)
-    if (req.body.pdfBase64 && req.body.pdfBase64.length > 100) {
+    // 👉 Enviar correo solo si hay email válido y PDF
+    if (datosCotizacion.email && 
+        datosCotizacion.pdfBase64 && 
+        datosCotizacion.pdfBase64.length > 100) {
       try {
-        console.log('📧 Intentando enviar correo...');
-        const pdfBuffer = Buffer.from(req.body.pdfBase64, 'base64');
+        const pdfBuffer = Buffer.from(datosCotizacion.pdfBase64, 'base64');
 
         const mailOptions = {
           from: 'monica.romeroz.2003@gmail.com',
@@ -845,26 +840,19 @@ app.post('/cotizaciones', async (req, res) => {
             <p><strong>Mensaje:</strong> ${datosCotizacion.mensaje}</p>
             <br>
             <p>Adjuntamos la cotización en formato PDF.</p>
-            <p><em>Distribuidora Industrial S.A.C.</em></p>
           `,
-          attachments: [
-            {
-              filename: `Cotizacion_${numeroCotizacion}.pdf`,
-              content: pdfBuffer,
-              contentType: 'application/pdf'
-            }
-          ]
+          attachments: [{
+            filename: `Cotizacion_${numeroCotizacion}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }]
         };
 
         await transporter.sendMail(mailOptions);
         console.log('✅ Correo enviado exitosamente');
       } catch (emailError) {
         console.error('⚠️ Error al enviar correo:', emailError.message);
-        console.error('Stack:', emailError.stack);
-        // No fallar si el correo falla
       }
-    } else {
-      console.log('ℹ️ No se envió correo (PDF no presente o muy corto)');
     }
 
     res.status(201).json({ 
@@ -875,20 +863,12 @@ app.post('/cotizaciones', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌❌❌ ERROR CRÍTICO ❌❌❌');
-    console.error('Mensaje:', error.message);
+    console.error('❌ ERROR CRÍTICO:', error.message);
     console.error('Stack:', error.stack);
-    console.error('Nombre del error:', error.name);
     
-    if (error.name === 'ValidationError') {
-      console.error('Errores de validación:', error.errors);
-    }
-
     res.status(500).json({
       message: 'Error al procesar la cotización',
       error: error.message,
-      errorName: error.name,
-      errorDetails: error.errors,
       success: false
     });
   }
@@ -1570,7 +1550,6 @@ app.get('/banner', async (req, res) => {
 server.listen(PORT, () => {
     console.log(`🚀 Servidor con Socket.IO corriendo en http://localhost:${PORT}`);
 });
-
 
 
 
