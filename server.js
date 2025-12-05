@@ -1366,106 +1366,247 @@ app.delete('/favorites/:userId/:productId', async (req, res) => {
 
 
 const bannerSchema = new mongoose.Schema({
-  _id: { type: String },
-  image: { type: Buffer },
-  contentType: { type: String }
+  _id: { type: String, required: true },
+  image: { type: Buffer, required: true },
+  contentType: { type: String, required: true },
+  createdAt: { type: Date, default: Date.now }
 });
 
 const Banner = mongoose.model('Banner', bannerSchema);
 
-// ====== CONFIGURACIÓN MULTER PARA BANNER (EN MEMORIA) ======
-const storageBanner = multer.memoryStorage(); // ✅ Cambiar a memoryStorage
+// =================== CONFIGURACIÓN MULTER ===================
+const storageBanner = multer.memoryStorage();
 
 const uploadBanner = multer({ 
   storage: storageBanner,
-  limits: { fileSize: 5 * 1024 * 1024 } // 5MB límite
+  limits: { 
+    fileSize: 5 * 1024 * 1024 // Límite de 5MB
+  },
+  fileFilter: (req, file, cb) => {
+    // Validar que sea imagen
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Solo se permiten imágenes'), false);
+    }
+  }
 });
 
-// ✅ Cambiar 'imagen' por 'image' para que coincida con el frontend
+// =================== ENDPOINT: SUBIR BANNER (POST) ===================
 app.post('/banner', uploadBanner.single('image'), async (req, res) => {
   try {
-    const tipo = req.body.tipo;
-    const orden = req.body.orden; // Para el carrusel
+    const { tipo, orden } = req.body;
     
-    console.log('📥 Recibido:', { tipo, orden, hasFile: !!req.file });
+    // Log para debugging
+    console.log('📥 Recibido:', { 
+      tipo, 
+      orden, 
+      hasFile: !!req.file,
+      fileSize: req.file ? req.file.size : 0,
+      mimetype: req.file ? req.file.mimetype : null
+    });
     
+    // Validaciones
     if (!req.file) {
-      return res.status(400).json({ mensaje: "No se envió ninguna imagen" });
+      return res.status(400).json({ 
+        success: false,
+        mensaje: "No se envió ninguna imagen" 
+      });
     }
+    
     if (!tipo) {
-      return res.status(400).json({ mensaje: "Debes indicar el tipo de banner" });
+      return res.status(400).json({ 
+        success: false,
+        mensaje: "Debes indicar el tipo de banner (principal, ofertasHome, carrusel)" 
+      });
     }
 
-    // ✅ Para carrusel, usar tipo + orden como ID
+    // Validar tipos permitidos
+    const tiposPermitidos = ['principal', 'ofertasHome', 'carrusel'];
+    if (!tiposPermitidos.includes(tipo)) {
+      return res.status(400).json({
+        success: false,
+        mensaje: `Tipo no válido. Permitidos: ${tiposPermitidos.join(', ')}`
+      });
+    }
+
+    // Determinar el ID del banner
     let bannerId = tipo;
-    if (tipo === 'carrusel' && orden !== undefined) {
-      bannerId = `carrusel_${orden}`;
+    
+    if (tipo === 'carrusel') {
+      if (orden === undefined || orden === null) {
+        return res.status(400).json({
+          success: false,
+          mensaje: "Para carrusel debes enviar el campo 'orden' (0, 1 o 2)"
+        });
+      }
+      
+      // Validar que orden sea 0, 1 o 2
+      const ordenNum = parseInt(orden);
+      if (![0, 1, 2].includes(ordenNum)) {
+        return res.status(400).json({
+          success: false,
+          mensaje: "El orden debe ser 0, 1 o 2"
+        });
+      }
+      
+      bannerId = `carrusel_${ordenNum}`;
     }
 
-    await Banner.findOneAndUpdate(
+    // Guardar o actualizar el banner en MongoDB
+    const bannerGuardado = await Banner.findOneAndUpdate(
       { _id: bannerId },
       { 
-        image: req.file.buffer, // ✅ Ahora sí tendrá buffer
-        contentType: req.file.mimetype
+        image: req.file.buffer,
+        contentType: req.file.mimetype,
+        createdAt: new Date()
       },
-      { upsert: true, new: true }
+      { 
+        upsert: true, 
+        new: true 
+      }
     );
 
-    console.log('✅ Banner guardado:', bannerId);
-    res.json({ 
-      mensaje: `✅ Banner ${bannerId} guardado en MongoDB`,
-      id: bannerId 
+    console.log('✅ Banner guardado exitosamente:', bannerId);
+    
+    res.status(200).json({ 
+      success: true,
+      mensaje: `Banner guardado correctamente`,
+      data: {
+        id: bannerId,
+        tipo: tipo,
+        orden: tipo === 'carrusel' ? orden : null,
+        size: req.file.size,
+        contentType: req.file.mimetype
+      }
     });
 
   } catch (error) {
-    console.error('❌ Error en /banner:', error);
+    console.error('❌ Error en POST /banner:', error);
+    
     res.status(500).json({ 
-      mensaje: "Error interno",
+      success: false,
+      mensaje: "Error interno del servidor",
       error: error.message 
     });
   }
 });
 
-// ✅ Mejorar el GET para soportar carrusel
+// =================== ENDPOINT: OBTENER BANNER (GET) ===================
 app.get('/banner', async (req, res) => {
   try {
-    const tipo = req.query.tipo;
+    const { tipo } = req.query;
     
+    console.log('📤 Solicitado banner tipo:', tipo);
+    
+    // Validación
     if (!tipo) {
-      return res.status(400).json({ mensaje: "Debes indicar el tipo de banner" });
+      return res.status(400).json({ 
+        success: false,
+        mensaje: "Debes indicar el tipo de banner (?tipo=principal o ?tipo=carrusel)" 
+      });
     }
 
-    // Si pide carrusel, devolver todas las imágenes
+    // CASO 1: Solicitud de CARRUSEL (devuelve array de imágenes)
     if (tipo === 'carrusel') {
       const banners = await Banner.find({ 
         _id: { $regex: /^carrusel_/ } 
       }).sort({ _id: 1 });
 
       if (banners.length === 0) {
-        return res.status(404).json({ mensaje: "No hay imágenes en el carrusel" });
+        return res.status(404).json({ 
+          success: false,
+          mensaje: "No hay imágenes en el carrusel" 
+        });
       }
 
       const imagenes = banners.map(b => ({
         id: b._id,
-        image: `data:${b.contentType};base64,${b.image.toString('base64')}`
+        orden: parseInt(b._id.split('_')[1]),
+        image: `data:${b.contentType};base64,${b.image.toString('base64')}`,
+        contentType: b.contentType
       }));
 
-      return res.json({ imagenes });
+      console.log(`✅ Devolviendo ${imagenes.length} imágenes del carrusel`);
+
+      return res.status(200).json({ 
+        success: true,
+        imagenes: imagenes
+      });
     }
 
-    // Para banners individuales
+    // CASO 2: Solicitud de BANNER INDIVIDUAL (principal o ofertasHome)
     const banner = await Banner.findOne({ _id: tipo });
 
     if (!banner || !banner.image) {
-      return res.status(404).json({ mensaje: "No hay banner" });
+      return res.status(404).json({ 
+        success: false,
+        mensaje: `No hay banner del tipo '${tipo}'` 
+      });
     }
 
     const base64 = `data:${banner.contentType};base64,${banner.image.toString('base64')}`;
-    res.json({ image: base64 });
+    
+    console.log(`✅ Banner '${tipo}' encontrado`);
+
+    res.status(200).json({ 
+      success: true,
+      image: base64,
+      contentType: banner.contentType
+    });
 
   } catch (error) {
     console.error('❌ Error en GET /banner:', error);
-    res.status(500).json({ mensaje: "Error interno", error: error.message });
+    
+    res.status(500).json({ 
+      success: false,
+      mensaje: "Error interno del servidor", 
+      error: error.message 
+    });
+  }
+});
+
+// =================== ENDPOINT: ELIMINAR BANNER (DELETE) - OPCIONAL ===================
+app.delete('/banner', async (req, res) => {
+  try {
+    const { tipo, orden } = req.query;
+    
+    if (!tipo) {
+      return res.status(400).json({ 
+        success: false,
+        mensaje: "Debes indicar el tipo de banner" 
+      });
+    }
+
+    let bannerId = tipo;
+    if (tipo === 'carrusel' && orden !== undefined) {
+      bannerId = `carrusel_${orden}`;
+    }
+
+    const resultado = await Banner.findByIdAndDelete(bannerId);
+
+    if (!resultado) {
+      return res.status(404).json({
+        success: false,
+        mensaje: `No se encontró el banner '${bannerId}'`
+      });
+    }
+
+    console.log('🗑️ Banner eliminado:', bannerId);
+
+    res.status(200).json({
+      success: true,
+      mensaje: `Banner '${bannerId}' eliminado correctamente`
+    });
+
+  } catch (error) {
+    console.error('❌ Error en DELETE /banner:', error);
+    
+    res.status(500).json({
+      success: false,
+      mensaje: "Error interno del servidor",
+      error: error.message
+    });
   }
 });
 
