@@ -19,25 +19,44 @@ const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
+require('dotenv').config();
 
-
-
-// Inicializar Socket.IO
+// 🔥 INICIALIZAR SOCKET.IO (esto faltaba)
 const io = new Server(server, {
   cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
+    origin: [
+      '*',
+      'https://dinsac-admin.onrender.com',
+      'http://localhost:4200'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
   }
 });
 
+
+
 // Middleware - IMPORTANTE: el orden es crucial
 // CORS primero
-
+// Middleware - IMPORTANTE: el orden es crucial
+// CORS primero
 app.use(cors({
-  origin: ['http://localhost:4200', 'https://backend-dinsac-hlf0.onrender.com/','http://localhost:3200'], // acepta ambos
+  origin: [
+    'http://localhost:4200',
+    'http://localhost:3000',
+    'http://localhost:3200',
+    'https://dinsac-admin.onrender.com',  // 🔥 AGREGA TU FRONTEND DESPLEGADO
+    'https://backend-dinsac-hlf0.onrender.com' // 🔥 AGREGA TU BACKEND
+  ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: true // 🔥 IMPORTANTE para cookies/sesiones
 }));
+
+
+
+
+
+
 app.use(express.json({ limit: '60mb' })); // aceptar JSON grandes
 app.use(express.urlencoded({ extended: true, limit: '50mb' })); // aceptar formularios grandes
 app.use(express.json({ limit: '80mb' })); // muy importante para imágenes en base64
@@ -58,12 +77,21 @@ app.use((req, res, next) => {
 });
 
 // MongoDB Connection
-const dbURI = 'mongodb://localhost:27017/mydatabase';
-mongoose.connect(dbURI)
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.error('MongoDB connection error:', err));
+//const dbURI = 'mongodb://localhost:27017/mydatabase';
+//mongoose.connect(dbURI)
+  //  .then(() => console.log('MongoDB connected'))
+   // .catch(err => console.error('MongoDB connection error:', err));
 
+    // MongoDB Connection
+const dbURI = process.env.MONGODB_URI; // antes tenías localhost
+mongoose.connect(dbURI, {
     
+})
+.then(() => console.log('✅ MongoDB Atlas connected'))
+.catch(err => console.error('❌ MongoDB Atlas connection error:', err));
+
+
+
 // User Schema
 const userSchema = new mongoose.Schema({
     username: { type: String, required: true, unique: true },
@@ -83,13 +111,7 @@ async function createAdminUser() {
         console.log('Admin user already exists');
     }
 }
-
-
-
-
 createAdminUser();
-
-
 
 
 
@@ -131,7 +153,13 @@ app.post('/register', async (req, res) => {
 });
 
 
-
+// =================== RUTA BASE / (ROOT) ===================
+app.get('/', (req, res) => {
+  res.status(200).json({
+  message: '✅ API DINSAC corriendo correctamente en Render. Usa las rutas /users, /products, etc.',
+ environment: process.env.NODE_ENV || 'production'
+ });
+});
 
 
 
@@ -1410,7 +1438,7 @@ app.get('/banner', async (req, res) => {
 
 // Iniciar servidor
 server.listen(PORT, () => {
-    console.log(`🚀 Servidor con Socket.IO corriendo en http://localhost:${PORT}`);
+    console.log(`🚀 Servidor con Socket.IO corriendo en https://backend-dinsac-hlf0.onrender.com/${PORT}`);
 });
 
 
