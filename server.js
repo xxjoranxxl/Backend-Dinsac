@@ -147,30 +147,73 @@ app.get('/users', async (req, res) => {
 });
 
 app.post('/login', async (req, res) => {
-    const { username, password } = req.body;
-    const cliente = await UserCliente.findOne({ email });
-if (cliente && await bcrypt.compare(password, cliente.password)) {
-  // login exitoso
-} else {
-  res.status(401).json({ message: 'Credenciales incorrectas' });
-}
+    try {
+        const { username, password } = req.body;
 
+        if (!username || !password) {
+            return res.status(400).json({ message: 'Username y password son obligatorios' });
+        }
+
+        // Buscar usuario admin
+        const user = await User.findOne({ username });
+        
+        if (user && await bcrypt.compare(password, user.password)) {
+            res.json({ 
+                message: 'Login exitoso', 
+                user: {
+                    _id: user._id,
+                    username: user.username,
+                    role: user.role
+                },
+                success: true
+            });
+        } else {
+            res.status(401).json({ 
+                message: 'Credenciales incorrectas',
+                success: false
+            });
+        }
+    } catch (err) {
+        console.error('Error en login:', err);
+        res.status(500).json({ message: 'Error en el servidor', error: err.message });
+    }
 });
 
 // Registro de Cliente
 app.post('/register', async (req, res) => {
     const { username, password } = req.body;
     try {
+        if (!username || !password) {
+            return res.status(400).json({ message: 'Username y password son obligatorios' });
+        }
+
         const existingUser = await User.findOne({ username });
         if (existingUser) {
             return res.status(400).json({ message: 'El usuario ya existe' });
         }
 
-        const newUser = new User({ username, password, role: 'cliente' });
+        // 🔐 Hash de la contraseña
+        const hashedPassword = await bcrypt.hash(password, 10);
+
+        const newUser = new User({ 
+            username, 
+            password: hashedPassword,  // ✅ Guardar password hasheado
+            role: 'cliente' 
+        });
+        
         await newUser.save();
-        res.status(201).json({ message: 'Cliente registrado correctamente', user: newUser });
+        
+        res.status(201).json({ 
+            message: 'Cliente registrado correctamente', 
+            user: {
+                _id: newUser._id,
+                username: newUser.username,
+                role: newUser.role
+            }
+        });
     } catch (err) {
-        res.status(500).json({ message: 'Error al registrar cliente', error: err });
+        console.error('Error registrando usuario:', err);
+        res.status(500).json({ message: 'Error al registrar cliente', error: err.message });
     }
 });
 
