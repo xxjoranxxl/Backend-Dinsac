@@ -235,6 +235,15 @@ const transporter = nodemailer.createTransport({
 });
 
 
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error('❌ Error en configuración de nodemailer:', error);
+  } else {
+    console.log('✅ Servidor de correo listo para enviar mensajes');
+  }
+});
+
+
         // Crear nuevo cliente
         const newCliente = new UserCliente({ 
             password, 
