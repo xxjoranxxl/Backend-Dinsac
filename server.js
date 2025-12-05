@@ -707,7 +707,7 @@ app.get('/interacciones', async (req, res) => {
 
 const cotizacionSchema = new mongoose.Schema({
   numeroCotizacion: { type: String, required: true, unique: true },
-userId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserCliente', required: true },
+userId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserCliente', required: false },
   nombre: String,
   dniRuc: String,
   email: String,
@@ -738,12 +738,60 @@ const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 // ===================  GUARDAR COTIZACION  ===================
 
 // ✅ Endpoint corregido para guardar cotización y enviar correo
+// =================== GUARDAR COTIZACION ===================
+
 app.post('/cotizaciones', async (req, res) => {
   try {
-    
     console.log('📧 Procesando cotización...');
+    console.log('📦 Body recibido:', {
+      userId: req.body.userId,
+      nombre: req.body.nombre,
+      email: req.body.email,
+      productos: req.body.productos?.length || 0,
+      hasPDF: !!req.body.pdfBase64
+    });
 
-    // 👉 Usar el número que viene del frontend o generar uno nuevo
+    // ✅ Validar campos requeridos
+    const { nombre, dniRuc, email, telefonoMovil, contacto, productos, pdfBase64 } = req.body;
+
+    if (!nombre || !dniRuc || !email || !telefonoMovil || !contacto) {
+      return res.status(400).json({
+        success: false,
+        message: 'Faltan campos obligatorios',
+        faltantes: {
+          nombre: !nombre,
+          dniRuc: !dniRuc,
+          email: !email,
+          telefonoMovil: !telefonoMovil,
+          contacto: !contacto
+        }
+      });
+    }
+
+    if (!productos || productos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Debes agregar al menos un producto'
+      });
+    }
+
+    if (!pdfBase64) {
+      return res.status(400).json({
+        success: false,
+        message: 'No se recibió el PDF'
+      });
+    }
+
+    // ✅ Validar formato de email
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email inválido'
+      });
+    }
+
+    // ✅ Generar número de cotización
     let numeroCotizacion = req.body.numeroCotizacion;
     
     if (!numeroCotizacion) {
@@ -752,73 +800,122 @@ app.post('/cotizaciones', async (req, res) => {
       numeroCotizacion = `COT-${numero.toString().padStart(8, '0')}`;
     }
 
-    // 👉 Crear nueva cotización
-const nuevaCotizacion = new Cotizacion({
-  numeroCotizacion,
-  userId: req.body.userId,
-  nombre: req.body.nombre,
-  dniRuc: req.body.dniRuc,
-  email: req.body.email,
-  telefonoMovil: req.body.telefonoMovil,
-  mensaje: req.body.mensaje,
-  contacto: req.body.contacto || 'No especificado',  // ✅ SOLO UNO
-  productos: req.body.productos,
-  pdfBase64: req.body.pdfBase64,
-  fecha: new Date(),
-  estado: 'pendiente'
-});
+    // ✅ Validar que el número no exista
+    const existente = await Cotizacion.findOne({ numeroCotizacion });
+    if (existente) {
+      const total = await Cotizacion.countDocuments();
+      const numero = total + 1;
+      numeroCotizacion = `COT-${numero.toString().padStart(8, '0')}`;
+    }
 
+    // ✅ Crear nueva cotización
+    const nuevaCotizacion = new Cotizacion({
+      numeroCotizacion,
+      userId: req.body.userId || null, // ✅ Puede ser null
+      nombre: nombre.trim(),
+      dniRuc: dniRuc.trim(),
+      email: email.trim().toLowerCase(),
+      telefonoMovil: telefonoMovil.trim(),
+      mensaje: req.body.mensaje?.trim() || '',
+      contacto: contacto.trim(),
+      productos: productos.map(p => ({
+        categoria: p.categoria?.trim() || '',
+        equipo: p.equipo?.trim() || '',
+        cantidad: parseInt(p.cantidad) || 1,
+        precioUnitario: parseFloat(p.precioUnitario) || 0
+      })),
+      pdfBase64: pdfBase64,
+      fecha: new Date(),
+      estado: 'pendiente'
+    });
 
     await nuevaCotizacion.save();
-    console.log('✅ Cotización guardada en BD');
+    console.log('✅ Cotización guardada en BD:', numeroCotizacion);
 
-    // 👉 Convertir el PDF base64 a buffer
-    const pdfBuffer = Buffer.from(req.body.pdfBase64, 'base64');
+    // ✅ Preparar correo
+    try {
+      const pdfBuffer = Buffer.from(pdfBase64, 'base64');
 
-    // 👉 Configurar correo
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: `${req.body.email}, ${process.env.EMAIL_OWNER || 'admin@tuempresa.com'}`,
-      subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
-      html: `
-        <h3>Cotización ${numeroCotizacion}</h3>
-        <p><strong>Cliente:</strong> ${req.body.nombre}</p>
-        <p><strong>Email:</strong> ${req.body.email}</p>
-        <p><strong>Teléfono:</strong> ${req.body.telefonoMovil}</p>
-        <p><strong>Mensaje:</strong> ${req.body.mensaje}</p>
-        <br>
-        <p>Adjuntamos la cotización en formato PDF.</p>
-        <p><em>Distribuidora Industrial S.A.C.</em></p>
-      `,
-      attachments: [
-        {
-          filename: `Cotizacion_${numeroCotizacion}.pdf`,
-          content: pdfBuffer,
-          contentType: 'application/pdf'
-        }
-      ]
-    };
+      const mailOptions = {
+        from: process.env.EMAIL_USER,
+        to: `${email}, ${process.env.EMAIL_OWNER || 'admin@tuempresa.com'}`,
+        subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #007bff;">Cotización ${numeroCotizacion}</h2>
+            <p><strong>Cliente:</strong> ${nombre}</p>
+            <p><strong>DNI/RUC:</strong> ${dniRuc}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            <p><strong>Teléfono:</strong> ${telefonoMovil}</p>
+            <p><strong>Forma de contacto preferida:</strong> ${contacto}</p>
+            ${req.body.mensaje ? `<p><strong>Mensaje:</strong> ${req.body.mensaje}</p>` : ''}
+            
+            <h3>Productos solicitados:</h3>
+            <table style="width: 100%; border-collapse: collapse;">
+              <thead>
+                <tr style="background: #f0f0f0;">
+                  <th style="padding: 8px; border: 1px solid #ddd;">Categoría</th>
+                  <th style="padding: 8px; border: 1px solid #ddd;">Equipo</th>
+                  <th style="padding: 8px; border: 1px solid #ddd;">Cantidad</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${productos.map(p => `
+                  <tr>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${p.categoria}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd;">${p.equipo}</td>
+                    <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">${p.cantidad}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+            </table>
+            
+            <br>
+            <p style="color: #666;">Adjuntamos la cotización en formato PDF.</p>
+            <p style="color: #666;"><em>Distribuidora Industrial S.A.C.</em></p>
+            <p style="font-size: 12px; color: #999;">Este correo fue generado automáticamente.</p>
+          </div>
+        `,
+        attachments: [
+          {
+            filename: `Cotizacion_${numeroCotizacion}.pdf`,
+            content: pdfBuffer,
+            contentType: 'application/pdf'
+          }
+        ]
+      };
 
-    // 👉 Enviar correo
-    await transporter.sendMail(mailOptions);
-    console.log('✅ Correo enviado exitosamente');
+      await transporter.sendMail(mailOptions);
+      console.log('✅ Correo enviado exitosamente');
+    } catch (emailError) {
+      console.error('⚠️ Error al enviar correo (pero cotización guardada):', emailError);
+      // No fallar toda la operación si solo falla el correo
+    }
 
     res.status(201).json({ 
-      message: `Cotización ${numeroCotizacion} guardada y enviada por correo exitosamente`,
-      numeroCotizacion,
-      success: true
+      success: true,
+      message: `Cotización ${numeroCotizacion} guardada correctamente`,
+      numeroCotizacion: numeroCotizacion,
+      data: {
+        id: nuevaCotizacion._id,
+        numeroCotizacion: numeroCotizacion,
+        fecha: nuevaCotizacion.fecha,
+        estado: nuevaCotizacion.estado
+      }
     });
 
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error completo:', error);
+    console.error('❌ Stack:', error.stack);
+    
     res.status(500).json({
+      success: false,
       message: 'Error al procesar la cotización',
       error: error.message,
-      success: false
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
-
 
 // 🔹 Contar cotizaciones pendientes
 // 🔹 Contar cotizaciones pendientes (usando Mongoose)
@@ -866,41 +963,65 @@ app.get('/cotizaciones/total', async (req, res) => {
 // =================== HISTORIAL DE COTIZACIONES ===================
 
 
+// =================== HISTORIAL DE COTIZACIONES ===================
+
 app.get('/cotizaciones', async (req, res) => {
   try {
     const cotizaciones = await Cotizacion.find()
-      .populate('userId', 'nombre email telefonoMovil dniRuc') // ❌ Quita 'contacto' de aquí
       .sort({ fecha: -1 })
       .lean(); 
 
-    const historial = cotizaciones.map(cot => ({
-      _id: cot._id,
-      numeroCotizacion: cot.numeroCotizacion, // ✅ Agrega esto
-      fecha: cot.fecha,
-      estado: cot.estado || 'pendiente',
-      nombre: cot.nombre || cot.userId?.nombre || 'Sin nombre', // ✅ Usa cot.nombre primero
-      email: cot.email || cot.userId?.email || '', // ✅ Usa cot.email primero
-      telefonoMovil: cot.telefonoMovil || cot.userId?.telefonoMovil || '', // ✅ Usa cot.telefonoMovil
-      dniRuc: cot.dniRuc || cot.userId?.dniRuc || '',
-      dni: cot.dniRuc || cot.userId?.dniRuc || '', // ✅ Agrega alias 'dni'
-      contacto: cot.contacto || 'No especificado',  // ✅ Esto ya está bien
-      pdfBase64: cot.pdfBase64 || '', // ✅ Agrega el PDF
-      productos: cot.productos.map(p => ({
-        categoria: p.categoria || '', // ✅ Agrega categoria
-        equipo: p.equipo || '', // ✅ Agrega equipo
-        nombre: p.equipo || p.nombre || p.name || 'Sin nombre',
-        cantidad: p.cantidad || 1,
-        precio: p.precioUnitario || p.precio || 0
-      }))
-    }));
+    // ✅ Si hay userId, intentar poblar
+    const cotizacionesConUsuario = await Promise.all(
+      cotizaciones.map(async (cot) => {
+        let usuario = null;
+        if (cot.userId) {
+          try {
+            usuario = await mongoose.model('UserCliente').findById(cot.userId).lean();
+          } catch (err) {
+            console.warn(`⚠️ No se pudo poblar usuario ${cot.userId}`);
+          }
+        }
 
-    res.json(historial); // ✅ Envía directamente el array, no { data: historial }
+        return {
+          _id: cot._id,
+          numeroCotizacion: cot.numeroCotizacion,
+          fecha: cot.fecha,
+          estado: cot.estado || 'pendiente',
+          nombre: cot.nombre,
+          email: cot.email,
+          telefonoMovil: cot.telefonoMovil,
+          dniRuc: cot.dniRuc,
+          dni: cot.dniRuc, // Alias
+          contacto: cot.contacto || 'No especificado',
+          mensaje: cot.mensaje || '',
+          pdfBase64: cot.pdfBase64 || '',
+          productos: cot.productos.map(p => ({
+            categoria: p.categoria || '',
+            equipo: p.equipo || '',
+            nombre: p.equipo || 'Sin nombre',
+            cantidad: p.cantidad || 1,
+            precio: p.precioUnitario || 0
+          })),
+          // Info del usuario si existe
+          usuario: usuario ? {
+            nombre: usuario.nombre,
+            email: usuario.email
+          } : null
+        };
+      })
+    );
+
+    res.json(cotizacionesConUsuario);
   } catch (error) {
     console.error('❌ Error al obtener cotizaciones:', error);
-    res.status(500).json({ message: 'Error al obtener cotizaciones' });
+    res.status(500).json({ 
+      success: false,
+      message: 'Error al obtener cotizaciones',
+      error: error.message
+    });
   }
 });
-
 
 
 app.get('/cotizaciones/usuario/:userId', async (req, res) => {
