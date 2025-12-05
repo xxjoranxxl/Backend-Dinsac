@@ -59,7 +59,6 @@ const io = new Server(server, {
   }
 });
 app.use(cors({
-<<<<<<< HEAD
   origin: function (origin, callback) {
     if (!origin || allowedOrigins.includes(origin)) {
       return callback(null, true);
@@ -67,24 +66,6 @@ app.use(cors({
     return callback(new Error("CORS bloqueado por seguridad: " + origin), false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE'],
-=======
-  origin: [
-    'http://localhost:4200',
-    'http://localhost:3000',
-    'http://localhost:3200',
-
-    // 🔥 FRONTEND ADMIN
-    'https://dinsac-admin.onrender.com',
-
-    // 🔥 FRONTEND CLIENTE (ESTE FALTABA)
-    'https://dinsac-cliente.onrender.com',
-
-    // 🔥 BACKEND RENDER
-    'https://backend-dinsac-hlf0.onrender.com'
-  ],
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
->>>>>>> 85129b1b80c1b75c8c27cba35a1a47dce8b09da5
   credentials: true
 }));
 
@@ -257,7 +238,6 @@ app.post('/clientes/register', async (req, res) => {
 
 // Configura tu transporte (puede ser Gmail)
 // =================== CONFIGURACIÓN DE CORREO ===================
-<<<<<<< HEAD
 const transporterRegistro = nodemailer.createTransport({
   host: 'smtp.gmail.com',
   port: 587,
@@ -270,21 +250,6 @@ const transporterRegistro = nodemailer.createTransport({
 });
 
 
-=======
-const transporter = nodemailer.createTransport({
-  host: 'smtp.gmail.com',
-  port: 587,
-  secure: false, // true para 465, false para otros puertos
-  auth: {
-    user: 'monica.romeroz.2003@gmail.com',
-    pass: 'txapatbhiebaxbbg'
-  },
-  tls: {
-    rejectUnauthorized: false // ⚠️ Solo para desarrollo
-  }
-});
-
->>>>>>> 85129b1b80c1b75c8c27cba35a1a47dce8b09da5
 // Verificar configuración al iniciar
 transporter.verify(function(error, success) {
   if (error) {
@@ -1628,11 +1593,7 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {
     res.json({ 
       mensaje: `Banner ${tipo} guardado correctamente`, 
       banner,
-<<<<<<< HEAD
       url: `https://backend-dinsac-hlf0.onrender.com/uploads/${req.file.filename}`
-=======
-      url: `https://backend-dinsac-hlf0.onrender.com/uploads/${req.file.filename}` // URL completa
->>>>>>> 85129b1b80c1b75c8c27cba35a1a47dce8b09da5
     });
 
   } catch (error) {
@@ -1662,12 +1623,8 @@ app.get('/banner', async (req, res) => {
       const respuesta = banners.map(b => ({
         id: b._id,
         image: `https://backend-dinsac-hlf0.onrender.com/uploads/${b.image}`,
-<<<<<<< HEAD
         tipo: b.tipo,
         orden: b.orden
-=======
-        tipo: b.tipo
->>>>>>> 85129b1b80c1b75c8c27cba35a1a47dce8b09da5
       }));
       
       console.log(`✅ ${respuesta.length} banners de carrusel encontrados:`, respuesta);
@@ -1727,10 +1684,3 @@ app.delete('/banner/:id', async (req, res) => {
 server.listen(PORT, () => {
   console.log(`Servidor corriendo en puerto ${PORT}`);
 });
-<<<<<<< HEAD
-=======
-
-
-
-
->>>>>>> 85129b1b80c1b75c8c27cba35a1a47dce8b09da5
