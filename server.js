@@ -45,13 +45,15 @@ app.use(cors({
     'http://localhost:3000',
     'http://localhost:3200',
     'https://dinsac-admin.onrender.com',  // 🔥 AGREGA TU FRONTEND DESPLEGADO
-    'https://backend-dinsac-hlf0.onrender.com' // 🔥 AGREGA TU BACKEND
+    'https://backend-dinsac-hlf0.onrender.com', // 🔥 AGREGA TU BACKEND
+    'https://dinsac-cliente.onrender.com'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true // 🔥 IMPORTANTE para cookies/sesiones
 }));
 
+app.options('*', cors());
 
 
 
