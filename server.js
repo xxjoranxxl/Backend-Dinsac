@@ -125,6 +125,65 @@ createAdminUser();
 
 
 
+createAdminUser();
+
+// 🔧 RUTA TEMPORAL PARA FORZAR RECREACIÓN DEL ADMIN
+app.post('/forzar-crear-admin', async (req, res) => {
+    try {
+        // Primero eliminar cualquier admin existente
+        await User.deleteMany({ username: 'admin' });
+        console.log('✅ Admins anteriores eliminados');
+
+        // Crear nuevo admin con password hasheado
+        const hashedPassword = await bcrypt.hash('admin123', 10);
+        const newAdmin = new User({ 
+            username: 'admin', 
+            password: hashedPassword, 
+            role: 'admin' 
+        });
+        
+        await newAdmin.save();
+        console.log('✅ Nuevo admin creado');
+
+        res.json({ 
+            message: '✅ Admin creado exitosamente',
+            admin: {
+                _id: newAdmin._id,
+                username: newAdmin.username,
+                role: newAdmin.role,
+                passwordHash: newAdmin.password.substring(0, 20) + '...'
+            }
+        });
+    } catch (err) {
+        console.error('❌ Error:', err);
+        res.status(500).json({ 
+            error: err.message,
+            stack: err.stack 
+        });
+    }
+});
+
+// 🔧 RUTA PARA VERIFICAR QUÉ HAY EN LA BASE DE DATOS
+app.get('/ver-usuarios', async (req, res) => {
+    try {
+        const users = await User.find({});
+        res.json({ 
+            total: users.length,
+            usuarios: users.map(u => ({
+                _id: u._id,
+                username: u.username,
+                role: u.role,
+                passwordLength: u.password.length,
+                passwordStart: u.password.substring(0, 10) + '...'
+            }))
+        });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+
 
 
 // =================== RUTA BASE / (ROOT) ===================
@@ -426,11 +485,14 @@ app.delete('/clientes/:id', async (req, res) => {
 
 // =================== CONFIGURACIÓN DE CORREO ===================
 const transporter = nodemailer.createTransport({
-  service: 'gmail',
+  host: 'smtp.gmail.com',
+  port: 587,
+  secure: false,
   auth: {
-    EMAIL_USER: 'monica.romeroz.2003@gmail.com',
-    EMAIL_PASS: 'xjflfqsxxynkpkqi'
-  }
+    user: 'monica.romeroz.2003@gmail.com',  // ✅ 'user' no 'EMAIL_USER'
+    pass: 'xjflfqsxxynkpkqi'  // ✅ 'pass' no 'EMAIL_PASS'
+  },
+  tls: { rejectUnauthorized: false }
 });
 
 // =================== PRODUCTOS ===================
