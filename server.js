@@ -26,16 +26,6 @@ require('dotenv').config();
 
 const bcrypt = require('bcrypt');
 
-// Al registrar usuario
-const newUser = new User({ username, password: hashedPassword });
-
-// Al hacer login
-const user = await User.findOne({ username });
-if(user && await bcrypt.compare(password, user.password)) {
-  // Login exitoso
-}
-
-
 
 
 // Middleware - IMPORTANTE: el orden es crucial
