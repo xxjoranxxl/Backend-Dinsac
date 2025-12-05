@@ -750,10 +750,20 @@ const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 // ===================  GUARDAR COTIZACION  ===================
 
 // ✅ Endpoint corregido para guardar cotización y enviar correo
+// =================== GUARDAR COTIZACION ===================
+
 app.post('/cotizaciones', async (req, res) => {
   try {
-    
     console.log('📧 Procesando cotización...');
+    console.log('📦 Datos recibidos:', JSON.stringify(req.body, null, 2));
+
+    // Validar que userId existe
+    if (!req.body.userId) {
+      return res.status(400).json({
+        message: 'El userId es obligatorio',
+        success: false
+      });
+    }
 
     // 👉 Usar el número que viene del frontend o generar uno nuevo
     let numeroCotizacion = req.body.numeroCotizacion;
@@ -765,67 +775,73 @@ app.post('/cotizaciones', async (req, res) => {
     }
 
     // 👉 Crear nueva cotización
-const nuevaCotizacion = new Cotizacion({
-  numeroCotizacion,
-  userId: req.body.userId,
-  nombre: req.body.nombre,
-  dniRuc: req.body.dniRuc,
-  email: req.body.email,
-  telefonoMovil: req.body.telefonoMovil,
-  mensaje: req.body.mensaje,
-  contacto: req.body.contacto || 'No especificado',  // ✅ SOLO UNO
-  productos: req.body.productos,
-  pdfBase64: req.body.pdfBase64,
-  fecha: new Date(),
-  estado: 'pendiente'
-});
-
+    const nuevaCotizacion = new Cotizacion({
+      numeroCotizacion,
+      userId: req.body.userId,
+      nombre: req.body.nombre,
+      dniRuc: req.body.dniRuc,
+      email: req.body.email,
+      telefonoMovil: req.body.telefonoMovil,
+      mensaje: req.body.mensaje || '',
+      contacto: req.body.contacto || 'No especificado',
+      productos: req.body.productos || [],
+      pdfBase64: req.body.pdfBase64 || '',
+      fecha: new Date(),
+      estado: 'pendiente'
+    });
 
     await nuevaCotizacion.save();
     console.log('✅ Cotización guardada en BD');
 
-    // 👉 Convertir el PDF base64 a buffer
-    const pdfBuffer = Buffer.from(req.body.pdfBase64, 'base64');
+    // 👉 Solo enviar correo si hay PDF
+    if (req.body.pdfBase64) {
+      try {
+        const pdfBuffer = Buffer.from(req.body.pdfBase64, 'base64');
 
-    // 👉 Configurar correo
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
-      to: `${req.body.email}, ${process.env.EMAIL_OWNER || 'admin@tuempresa.com'}`,
-      subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
-      html: `
-        <h3>Cotización ${numeroCotizacion}</h3>
-        <p><strong>Cliente:</strong> ${req.body.nombre}</p>
-        <p><strong>Email:</strong> ${req.body.email}</p>
-        <p><strong>Teléfono:</strong> ${req.body.telefonoMovil}</p>
-        <p><strong>Mensaje:</strong> ${req.body.mensaje}</p>
-        <br>
-        <p>Adjuntamos la cotización en formato PDF.</p>
-        <p><em>Distribuidora Industrial S.A.C.</em></p>
-      `,
-      attachments: [
-        {
-          filename: `Cotizacion_${numeroCotizacion}.pdf`,
-          content: pdfBuffer,
-          contentType: 'application/pdf'
-        }
-      ]
-    };
+        const mailOptions = {
+          from: 'monica.romeroz.2003@gmail.com',
+          to: `${req.body.email}, monica.romeroz.2003@gmail.com`, // Copia al admin
+          subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
+          html: `
+            <h3>Cotización ${numeroCotizacion}</h3>
+            <p><strong>Cliente:</strong> ${req.body.nombre}</p>
+            <p><strong>Email:</strong> ${req.body.email}</p>
+            <p><strong>Teléfono:</strong> ${req.body.telefonoMovil}</p>
+            <p><strong>DNI/RUC:</strong> ${req.body.dniRuc}</p>
+            <p><strong>Mensaje:</strong> ${req.body.mensaje}</p>
+            <br>
+            <p>Adjuntamos la cotización en formato PDF.</p>
+            <p><em>Distribuidora Industrial S.A.C.</em></p>
+          `,
+          attachments: [
+            {
+              filename: `Cotizacion_${numeroCotizacion}.pdf`,
+              content: pdfBuffer,
+              contentType: 'application/pdf'
+            }
+          ]
+        };
 
-    // 👉 Enviar correo
-    await transporter.sendMail(mailOptions);
-    console.log('✅ Correo enviado exitosamente');
+        await transporter.sendMail(mailOptions);
+        console.log('✅ Correo enviado exitosamente');
+      } catch (emailError) {
+        console.error('⚠️ Error al enviar correo (pero cotización guardada):', emailError);
+        // No fallar si el correo falla, la cotización ya está guardada
+      }
+    }
 
     res.status(201).json({ 
-      message: `Cotización ${numeroCotizacion} guardada y enviada por correo exitosamente`,
+      message: `Cotización ${numeroCotizacion} guardada exitosamente`,
       numeroCotizacion,
       success: true
     });
 
   } catch (error) {
-    console.error('❌ Error:', error);
+    console.error('❌ Error completo:', error);
     res.status(500).json({
       message: 'Error al procesar la cotización',
       error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined,
       success: false
     });
   }
