@@ -752,6 +752,7 @@ const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 // ✅ Endpoint corregido para guardar cotización y enviar correo
 // =================== GUARDAR COTIZACION ===================
 
+// =================== GUARDAR COTIZACION ===================
 app.post('/cotizaciones', async (req, res) => {
   try {
     console.log('📧 Procesando cotización...');
@@ -769,20 +770,46 @@ app.post('/cotizaciones', async (req, res) => {
       });
     }
 
+    // 🔹 Buscar datos del usuario si viene userId
+    let usuarioData = {
+      nombre: req.body.nombre || 'Cliente sin nombre',
+      email: email || '',
+      telefono: telefonoMovil || ''
+    };
+
+    if (req.body.userId) {
+      try {
+        const usuarioExiste = await UserCliente.findById(req.body.userId);
+        if (usuarioExiste) {
+          usuarioData = {
+            nombre: usuarioExiste.nombre,
+            email: usuarioExiste.email,
+            telefono: usuarioExiste.telefono || usuarioExiste.telefonoMovil
+          };
+          console.log('✅ Usuario encontrado:', usuarioData.nombre);
+        }
+      } catch (err) {
+        console.log('⚠️ userId inválido, usando datos del request');
+      }
+    }
+
     // 🔹 Generar número de cotización
     const total = await Cotizacion.countDocuments();
-    const numeroCotizacion = `COT-${(total + 1).toString().padStart(8, '0')}`;
+    const numeroCotizacion = req.body.numeroCotizacion || 
+      `COT-${(total + 1).toString().padStart(8, '0')}`;
+
+    console.log('📄 Número de cotización generado:', numeroCotizacion);
 
     // 🔹 Preparar datos con VALORES POR DEFECTO
     const datosCotizacion = {
       numeroCotizacion,
       userId: req.body.userId || null,
-      nombre: req.body.nombre || 'Cliente sin nombre',
+      nombre: req.body.nombre || usuarioData.nombre,
       dniRuc: req.body.dniRuc || '',
-      email: email || '',
-      telefonoMovil: telefonoMovil || '',
+      email: req.body.email || usuarioData.email,
+      telefonoMovil: req.body.telefonoMovil || usuarioData.telefono,
       mensaje: req.body.mensaje || '',
-      contacto: contacto || 'No especificado',
+      contacto: req.body.contacto || 'No especificado',
       productos: Array.isArray(req.body.productos) && req.body.productos.length > 0 
         ? req.body.productos 
         : [{
@@ -796,71 +823,140 @@ app.post('/cotizaciones', async (req, res) => {
       estado: 'pendiente'
     };
 
-    console.log('📋 Guardando cotización con datos:', {
+    console.log('📋 Datos a guardar:', {
       numeroCotizacion: datosCotizacion.numeroCotizacion,
+      nombre: datosCotizacion.nombre,
       email: datosCotizacion.email,
       telefono: datosCotizacion.telefonoMovil,
       contacto: datosCotizacion.contacto,
-      productos: datosCotizacion.productos.length
+      productos: datosCotizacion.productos.length,
+      pdfBase64: datosCotizacion.pdfBase64 ? '[PDF PRESENTE]' : '[SIN PDF]'
     });
 
-    // 🔹 Crear y guardar
+    // 🔹 Crear y guardar cotización
     const nuevaCotizacion = new Cotizacion(datosCotizacion);
     await nuevaCotizacion.save();
-    
-    console.log('✅ Cotización guardada exitosamente');
+    console.log('✅ Cotización guardada con ID:', nuevaCotizacion._id);
 
-    // 🔹 Enviar correo SOLO si hay PDF
-    if (datosCotizacion.email && 
-        datosCotizacion.pdfBase64 && 
-        datosCotizacion.pdfBase64.length > 100) {
+    // =================== LOGS DETALLADOS PARA EMAIL ===================
+    console.log('\n🔍 === INICIANDO VERIFICACIÓN DE ENVÍO DE CORREO ===');
+    console.log('📧 Email del cliente:', datosCotizacion.email);
+    console.log('📄 Longitud del PDF:', datosCotizacion.pdfBase64?.length || 0);
+    console.log('✅ Tiene email?', !!datosCotizacion.email);
+    console.log('✅ Tiene PDF?', !!datosCotizacion.pdfBase64);
+    console.log('✅ PDF > 100 chars?', datosCotizacion.pdfBase64?.length > 100);
+
+    // Verificar condiciones
+    const tieneEmail = !!datosCotizacion.email;
+    const tienePDF = !!datosCotizacion.pdfBase64;
+    const pdfValido = datosCotizacion.pdfBase64?.length > 100;
+
+    if (!tieneEmail) {
+      console.log('❌ NO SE ENVIARÁ CORREO: Falta email');
+    }
+    if (!tienePDF) {
+      console.log('❌ NO SE ENVIARÁ CORREO: Falta PDF');
+    }
+    if (!pdfValido) {
+      console.log('❌ NO SE ENVIARÁ CORREO: PDF muy corto o vacío');
+    }
+
+    // Intentar enviar correo
+    if (tieneEmail && tienePDF && pdfValido) {
+      console.log('\n✅ Todas las condiciones cumplidas, intentando enviar correo...');
+      
       try {
-        const pdfBuffer = Buffer.from(datosCotizacion.pdfBase64, 'base64');
+        // Verificar configuración del transporter
+        console.log('📮 Verificando configuración de nodemailer...');
+        console.log('  - User:', 'monica.romeroz.2003@gmail.com');
+        console.log('  - Pass configurado?', !!transporter.options?.auth?.pass);
 
-        await transporter.sendMail({
+        // Convertir PDF
+        console.log('📄 Convirtiendo PDF de base64 a buffer...');
+        const pdfBuffer = Buffer.from(datosCotizacion.pdfBase64, 'base64');
+        console.log('  - Tamaño del buffer:', pdfBuffer.length, 'bytes');
+
+        // Preparar opciones del correo
+        const mailOptions = {
           from: 'monica.romeroz.2003@gmail.com',
           to: `${datosCotizacion.email}, monica.romeroz.2003@gmail.com`,
-          subject: `Cotización ${numeroCotizacion} - DINSAC`,
+          subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
           html: `
-            <h3>Nueva Cotización ${numeroCotizacion}</h3>
+            <h3>Cotización ${numeroCotizacion}</h3>
+            <p><strong>Cliente:</strong> ${datosCotizacion.nombre}</p>
             <p><strong>Email:</strong> ${datosCotizacion.email}</p>
             <p><strong>Teléfono:</strong> ${datosCotizacion.telefonoMovil}</p>
+            <p><strong>DNI/RUC:</strong> ${datosCotizacion.dniRuc}</p>
             <p><strong>Contacto preferido:</strong> ${datosCotizacion.contacto}</p>
+            <p><strong>Mensaje:</strong> ${datosCotizacion.mensaje}</p>
+            <br>
+            <p>Adjuntamos la cotización en formato PDF.</p>
+            <p><em>Distribuidora Industrial S.A.C.</em></p>
           `,
           attachments: [{
             filename: `Cotizacion_${numeroCotizacion}.pdf`,
             content: pdfBuffer,
             contentType: 'application/pdf'
           }]
-        });
+        };
+
+        console.log('📧 Intentando enviar correo a:', mailOptions.to);
+        console.log('📎 Adjunto:', mailOptions.attachments[0].filename);
+        console.log('📏 Tamaño adjunto:', mailOptions.attachments[0].content.length, 'bytes');
+
+        // ENVIAR CORREO
+        const info = await transporter.sendMail(mailOptions);
         
-        console.log('✅ Correo enviado');
+        console.log('\n✅✅✅ CORREO ENVIADO EXITOSAMENTE ✅✅✅');
+        console.log('  - MessageId:', info.messageId);
+        console.log('  - Response:', info.response);
+        console.log('  - Accepted:', info.accepted);
+        console.log('  - Rejected:', info.rejected);
+        
       } catch (emailError) {
-        console.error('⚠️ Error enviando correo:', emailError.message);
+        console.error('\n❌❌❌ ERROR AL ENVIAR CORREO ❌❌❌');
+        console.error('Tipo de error:', emailError.name);
+        console.error('Mensaje:', emailError.message);
+        console.error('Código:', emailError.code);
+        console.error('Comando:', emailError.command);
+        console.error('Response:', emailError.response);
+        console.error('Stack completo:', emailError.stack);
+        
+        // No fallar la petición por error de email
       }
     } else {
-      console.log('ℹ️ No se envió correo (falta PDF o email)');
+      console.log('\n⚠️ No se envió correo porque no se cumplen todas las condiciones');
     }
 
+    console.log('=== FIN VERIFICACIÓN DE CORREO ===\n');
+
     res.status(201).json({ 
-      message: 'Cotización guardada exitosamente',
+      message: `Cotización ${numeroCotizacion} guardada exitosamente`,
       numeroCotizacion,
       cotizacionId: nuevaCotizacion._id,
       success: true
     });
 
   } catch (error) {
-    console.error('❌ ERROR:', error.message);
-    console.error('Stack completo:', error.stack);
+    console.error('❌❌❌ ERROR CRÍTICO EN /cotizaciones ❌❌❌');
+    console.error('Mensaje:', error.message);
+    console.error('Stack:', error.stack);
     
     res.status(500).json({
       message: 'Error al procesar la cotización',
       error: error.message,
-      stack: error.stack, // 👈 Para debugging
       success: false
     });
   }
 });
+
+
+
+
+
+
+
+
 
 
 // 🔹 Contar cotizaciones pendientes
