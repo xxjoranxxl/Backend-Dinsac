@@ -7,7 +7,7 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
-const nodemailer = require('nodemailer');
+const sgMail = require('@sendgrid/mail');
 require('dotenv').config(); // ✅ UNA SOLA VEZ
 
 const app = express();
@@ -23,31 +23,39 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 // =================== CONFIGURACIÓN DE NODEMAILER (UNA SOLA VEZ - GLOBAL) ===================
-console.log('🔧 Configurando transporter de correo...');
-console.log('📧 EMAIL_USER:', process.env.EMAIL_USER || '❌ NO CONFIGURADO');
-console.log('🔑 EMAIL_PASS:', process.env.EMAIL_PASS ? '✅ Configurado' : '❌ NO CONFIGURADO');
+// =================== CONFIGURACIÓN DE SENDGRID ===================
+console.log('🔧 Configurando SendGrid...');
+console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
+console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
 console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO');
 
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.EMAIL_USER,
-    pass: process.env.EMAIL_PASS
-  },
-  tls: {
-    rejectUnauthorized: false
-  }
-});
+// Configurar la API Key de SendGrid
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
-// Verificar conexión al iniciar el servidor
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ Error al conectar con Gmail:', error.message);
-    console.error('⚠️ Verifica EMAIL_USER y EMAIL_PASS en tu archivo .env');
-  } else {
-    console.log('✅ Servidor de correo listo para enviar mensajes');
+// Función helper para enviar correos con SendGrid
+async function enviarCorreoSendGrid(opciones) {
+  try {
+    const msg = {
+      to: opciones.to,
+      from: {
+        email: process.env.EMAIL_FROM || 'noreply@dinsac.com',
+        name: opciones.fromName || 'Distribuidora Industrial S.A.C.'
+      },
+      subject: opciones.subject,
+      html: opciones.html,
+      text: opciones.text || opciones.html.replace(/<[^>]*>/g, ''),
+      attachments: opciones.attachments || []
+    };
+
+    console.log(`📧 Enviando correo a: ${opciones.to}`);
+    const response = await sgMail.send(msg);
+    console.log('✅ Correo enviado exitosamente:', response[0].statusCode);
+    return { success: true, messageId: response[0].headers['x-message-id'] };
+  } catch (error) {
+    console.error('❌ Error enviando correo con SendGrid:', error.response?.body || error.message);
+    throw error;
   }
-});
+}
 
 // 🔥 INICIALIZAR SOCKET.IO
 const io = new Server(server, {
@@ -278,9 +286,8 @@ app.post('/clientes/register', async (req, res) => {
 
     // ✅ ENVIAR CORREO DE BIENVENIDA
     try {
-      const mailOptions = {
-        from: `"Distribuidora Industrial S.A.C." <${process.env.EMAIL_USER}>`,
-        to: email,
+  await enviarCorreoSendGrid({
+    to: email,
         subject: '🎉 ¡Bienvenido a DINSAC!',
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
@@ -304,7 +311,7 @@ app.post('/clientes/register', async (req, res) => {
             </div>
           </div>
         `
-      };
+  });
 
       await transporter.sendMail(mailOptions);
       console.log('✅ Correo de bienvenida enviado a:', email);
@@ -537,12 +544,20 @@ app.post('/ordenes', async (req, res) => {
 
     const mensaje = `Hola ${nombre},\n\nGracias por tu compra en DINSAC.\n\nResumen:\n${resumen}\n\nTotal: S/ ${total}\n\nSaludos,\nEquipo DINSAC`;
 
-    await transporter.sendMail({
-      from: `"Distribuidora Industrial S.A.C." <${process.env.EMAIL_USER}>`,
-      to: email,
-      subject: '🧾 Confirmación de tu compra en DINSAC',
-      text: mensaje
-    });
+await enviarCorreoSendGrid({
+  to: email,
+  subject: '🧾 Confirmación de tu compra en DINSAC',
+  html: `
+    <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+      <h2>Hola ${nombre},</h2>
+      <p>Gracias por tu compra en DINSAC.</p>
+      <h3>Resumen de tu pedido:</h3>
+      <pre>${resumen}</pre>
+      <h3>Total: S/ ${total}</h3>
+      <p>Saludos,<br>Equipo DINSAC</p>
+    </div>
+  `
+});
 
     res.status(200).json({ message: 'Orden registrada y correo enviado.' });
   } catch (error) {
@@ -661,17 +676,15 @@ app.post('/cotizaciones', async (req, res) => {
     try {
       console.log('📧 Preparando correo...');
 
-      const pdfBuffer = Buffer.from(pdfBase64, 'base64');
       const emailCliente = email.trim().toLowerCase();
       const emailEmpresa = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
 
       console.log(`📧 Enviando a: ${emailCliente} y ${emailEmpresa}`);
 
-      const mailOptions = {
-        from: `"Distribuidora Industrial S.A.C." <${process.env.EMAIL_USER}>`,
-        to: `${emailCliente}, ${emailEmpresa}`,
-        subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
-        html: `
+await enviarCorreoSendGrid({
+  to: [emailCliente, emailEmpresa],
+  subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
+  html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
             <h2 style="color: #007bff; text-align: center;">Cotización ${numeroCotizacion}</h2>
             <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -717,13 +730,16 @@ app.post('/cotizaciones', async (req, res) => {
           </div>
         `,
         attachments: [{
-          filename: `Cotizacion_${numeroCotizacion}.pdf`,
-          content: pdfBuffer,
-          contentType: 'application/pdf'
-        }]
-      };
+    content: pdfBase64,  // ⚠️ NOTA: Ya no usa pdfBuffer, usa directamente pdfBase64
+    filename: `Cotizacion_${numeroCotizacion}.pdf`,
+    type: 'application/pdf',
+    disposition: 'attachment'
+  }]
+});
 
-      const info = await transporter.sendMail(mailOptions);
+console.log('✅ Correo enviado exitosamente con SendGrid');
+
+
       console.log('✅ Correo enviado exitosamente:', info.messageId);
       console.log('📧 Enviado a:', mailOptions.to);
       emailEnviado = true;
