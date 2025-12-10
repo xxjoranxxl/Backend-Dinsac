@@ -63,7 +63,9 @@ const io = new Server(server, {
     origin: [
       '*',
       'https://dinsac-admin.onrender.com',
-      'http://localhost:4200'
+      'http://localhost:4200',
+      'http://127.0.0.1:5500/index.html'
+      
     ],
     methods: ['GET', 'POST', 'PUT', 'DELETE']
   }
@@ -77,7 +79,8 @@ app.use(cors({
     'http://localhost:3200',
     'https://dinsac-admin.onrender.com',
     'https://backend-dinsac-hlf0.onrender.com',
-    'https://dinsac-cliente.onrender.com'
+    'https://dinsac-cliente.onrender.com',
+    'http://127.0.0.1:5500/index.html'
   ],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
