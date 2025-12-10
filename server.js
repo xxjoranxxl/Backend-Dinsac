@@ -127,10 +127,15 @@ const userClienteSchema = new mongoose.Schema({
 const UserCliente = mongoose.model('UserCliente', userClienteSchema);
 
 const productSchema = new mongoose.Schema({
-  codigo: { type: Number, required: true },
+  codigo: { 
+    type: String, 
+    required: true,
+    trim: true,        // ✅ Elimina espacios en blanco
+    uppercase: true    // ✅ Convierte automáticamente a mayúsculas
+  },
   name: { type: String, required: true },
   description: { type: String, required: true },
-  image: { type: String, required: true },
+  image: { type: String, required: false },
   image1: { type: String, required: false },
   image2: { type: String, required: false },
   image3: { type: String, required: false },
@@ -146,6 +151,7 @@ const productSchema = new mongoose.Schema({
   tagsText: { type: String, required: false },
   destacado: { type: Boolean, default: false }
 });
+
 const Product = mongoose.model('Product', productSchema);
 
 const cotizacionSchema = new mongoose.Schema({
@@ -312,14 +318,12 @@ app.post('/clientes/register', async (req, res) => {
           </div>
         `
   });
-
-      await transporter.sendMail(mailOptions);
-      console.log('✅ Correo de bienvenida enviado a:', email);
+  console.log('✅ Correo de bienvenida enviado con SendGrid a:', email);
     } catch (emailError) {
       console.error('⚠️ Error al enviar correo de bienvenida:', emailError.message);
     }
 
-    const clienteResponse = {
+   const clienteResponse = {
       _id: newCliente._id,
       nombre: newCliente.nombre,
       email: newCliente.email,
@@ -399,6 +403,8 @@ app.delete('/clientes/:id', async (req, res) => {
   }
 });
 
+
+
 // =================== RUTAS DE PRODUCTOS ===================
 app.get('/products', async (req, res) => {
   try {
@@ -425,35 +431,202 @@ app.get('/products/:id', async (req, res) => {
 
 app.post('/products', async (req, res) => {
   try {
-    const { codigo, name, description, image, stock, category, estado } = req.body;
+    console.log('📥 Body recibido:', req.body);
+    
+    // ✅ Normalizar codigo como string y limpiar
+    if (req.body.codigo !== undefined && req.body.codigo !== null) {
+      req.body.codigo = String(req.body.codigo).trim().toUpperCase();
+      console.log('✅ Código normalizado:', req.body.codigo);
+    }
 
-    if (!codigo || !name || !description || !image || !stock || !category || !estado) {
+    const { codigo, name, description, category, estado, stock } = req.body;
+    
+    // ✅ Validar campos obligatorios
+    if (!codigo || !name || !description || !category || !estado) {
+      console.error('❌ Campos faltantes:', { codigo, name, description, category, estado });
       return res.status(400).json({
-        message: 'Faltan campos obligatorios',
+        message: "Faltan campos obligatorios",
+        faltantes: {
+          codigo: !codigo,
+          name: !name,
+          description: !description,
+          category: !category,
+          estado: !estado
+        },
         receivedData: req.body
       });
     }
 
+    // ✅ Validar que codigo sea alfanumérico
+    const codigoRegex = /^[A-Z0-9]+$/i;
+    if (!codigoRegex.test(codigo)) {
+      return res.status(400).json({
+        message: 'El código solo puede contener letras y números (sin espacios ni caracteres especiales)',
+        receivedCode: codigo
+      });
+    }
+
+    // ✅ Verificar si el código ya existe
+    const existingProduct = await Product.findOne({ codigo });
+    if (existingProduct) {
+      return res.status(400).json({
+        message: `Ya existe un producto con el código "${codigo}"`,
+        existingProduct: existingProduct.name
+      });
+    }
+
+    // ✅ Validar estado
+    if (!['Normal', 'Oferta'].includes(estado)) {
+      return res.status(400).json({
+        message: 'El campo "estado" debe ser "Normal" o "Oferta"',
+        receivedValue: estado
+      });
+    }
+
+    // ✅ Normalizar stock
+    req.body.stock = stock !== undefined ? Number(stock) : 0;
+
+    // ✅ Limpiar campos vacíos de imágenes
+    ['image', 'image1', 'image2', 'image3', 'videoURL'].forEach(field => {
+      if (!req.body[field] || req.body[field] === '') {
+        delete req.body[field];
+      }
+    });
+
     const newProduct = new Product(req.body);
     await newProduct.save();
+    
+    console.log('✅ Producto creado:', newProduct);
     res.status(201).json(newProduct);
   } catch (err) {
+    console.error('❌ Error creando producto:', err);
     res.status(400).json({
       message: 'Error creando producto',
-      error: err.message
+      error: err.message,
+      details: err.errors ? Object.keys(err.errors).map(key => ({
+        field: key,
+        message: err.errors[key].message
+      })) : null
     });
   }
 });
 
+// ✅ REEMPLAZA ESTA RUTA COMPLETA EN TU server.js (línea ~420)
 app.put('/products/:id', async (req, res) => {
   try {
-    const updatedProduct = await Product.findByIdAndUpdate(req.params.id, req.body, { new: true });
-    if (!updatedProduct) return res.status(404).json({ message: 'Product not found' });
+    console.log('📝 ============ INICIO ACTUALIZACIÓN ============');
+    console.log('📝 ID:', req.params.id);
+    console.log('📝 Body recibido:', req.body);
+    
+    // ✅ ELIMINAR _id del body si viene (MongoDB no permite modificarlo)
+    delete req.body._id;
+    
+    // ✅ Normalizar codigo
+    if (req.body.codigo !== undefined && req.body.codigo !== null) {
+      req.body.codigo = String(req.body.codigo).trim().toUpperCase();
+      console.log('✅ Código normalizado:', req.body.codigo);
+    }
+    
+    const { codigo, name, description, category, estado, stock } = req.body;
+    
+    // ✅ Validar campos obligatorios
+    if (!codigo || !name || !description || !category || !estado) {
+      console.error('❌ FALTAN CAMPOS OBLIGATORIOS');
+      return res.status(400).json({
+        message: 'Faltan campos obligatorios',
+        faltantes: {
+          codigo: !codigo ? '❌ FALTA' : '✅',
+          name: !name ? '❌ FALTA' : '✅',
+          description: !description ? '❌ FALTA' : '✅',
+          category: !category ? '❌ FALTA' : '✅',
+          estado: !estado ? '❌ FALTA' : '✅'
+        }
+      });
+    }
+
+    // ✅ Validar que codigo sea alfanumérico (letras y números)
+    const codigoRegex = /^[A-Z0-9]+$/i;
+    if (!codigoRegex.test(codigo)) {
+      console.error('❌ CÓDIGO INVÁLIDO:', codigo);
+      return res.status(400).json({
+        message: 'El código solo puede contener letras y números (sin espacios ni caracteres especiales)',
+        receivedCode: codigo,
+        example: 'MT123, GEN2024, 200MG'
+      });
+    }
+
+    // ✅ Verificar si el código ya existe en OTRO producto
+    const existingProduct = await Product.findOne({ 
+      codigo, 
+      _id: { $ne: req.params.id } 
+    });
+    
+    if (existingProduct) {
+      console.error('❌ CÓDIGO DUPLICADO:', codigo);
+      return res.status(400).json({
+        message: `Ya existe otro producto con el código "${codigo}"`,
+        existingProduct: existingProduct.name
+      });
+    }
+
+    // ✅ Validar estado
+    if (!['Normal', 'Oferta'].includes(estado)) {
+      console.error('❌ ESTADO INVÁLIDO:', estado);
+      return res.status(400).json({
+        message: 'El campo "estado" debe ser "Normal" o "Oferta"',
+        receivedValue: estado
+      });
+    }
+
+    // ✅ Normalizar stock
+    if (stock !== undefined) {
+      req.body.stock = Number(stock);
+    }
+
+    // ✅ Limpiar campos vacíos
+    ['image', 'image1', 'image2', 'image3', 'videoURL'].forEach(field => {
+      if (req.body[field] === undefined || req.body[field] === '') {
+        delete req.body[field];
+      }
+    });
+
+    console.log('🔄 Actualizando en MongoDB...');
+    const updatedProduct = await Product.findByIdAndUpdate(
+      req.params.id, 
+      req.body, 
+      { 
+        new: true, 
+        runValidators: true,
+        context: 'query'
+      }
+    );
+    
+    if (!updatedProduct) {
+      console.error('❌ PRODUCTO NO ENCONTRADO');
+      return res.status(404).json({ message: 'Product not found' });
+    }
+    
+    console.log('✅ ============ PRODUCTO ACTUALIZADO EXITOSAMENTE ============');
+    console.log('✅ Producto:', updatedProduct);
     res.json(updatedProduct);
+    
   } catch (err) {
-    res.status(400).json({ message: 'Error updating product', error: err });
+    console.error('❌ ============ ERROR EN ACTUALIZACIÓN ============');
+    console.error('❌ Error:', err.message);
+    console.error('❌ Stack:', err.stack);
+    
+    res.status(400).json({ 
+      message: 'Error updating product', 
+      error: err.message,
+      details: err.errors ? Object.keys(err.errors).map(key => ({
+        field: key,
+        message: err.errors[key].message
+      })) : null
+    });
   }
 });
+
+
 
 app.delete('/products/:id', async (req, res) => {
   try {
@@ -464,6 +637,9 @@ app.delete('/products/:id', async (req, res) => {
     res.status(500).json({ message: 'Error deleting product', error: err });
   }
 });
+
+
+
 
 // =================== FAVORITOS ===================
 app.post('/favorites', async (req, res) => {
@@ -740,8 +916,6 @@ await enviarCorreoSendGrid({
 console.log('✅ Correo enviado exitosamente con SendGrid');
 
 
-      console.log('✅ Correo enviado exitosamente:', info.messageId);
-      console.log('📧 Enviado a:', mailOptions.to);
       emailEnviado = true;
 
     } catch (emailError) {
