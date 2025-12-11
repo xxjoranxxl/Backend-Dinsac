@@ -983,6 +983,36 @@ app.delete('/cotizaciones/:id', async (req, res) => {
   }
 });
 
+
+app.post('/send-email', async (req, res) => {
+    // Estas son las variables que debe enviar tu formulario HTML
+    const { email_del_destinatario, asunto, mensaje } = req.body; 
+
+    if (!email_del_destinatario || !asunto || !mensaje) {
+        return res.status(400).send({ error: "Faltan campos obligatorios." });
+    }
+
+    const msg = {
+        to: email_del_destinatario, // <-- EL DESTINATARIO DEL FORMULARIO
+        from: process.env.FROM_EMAIL, // <-- TU CORREO VERIFICADO EN SENDGRID
+        subject: asunto,
+        html: `
+            <p><strong>Asunto:</strong> ${asunto}</p>
+            <hr>
+            <p><strong>Mensaje:</strong></p>
+            <p>${mensaje}</p>
+        `,
+    };
+
+    try {
+        await sgMail.send(msg);
+        res.status(200).send({ message: `Correo enviado a ${email_del_destinatario} con éxito.` });
+    } catch (error) {
+        console.error("Error de SendGrid:", error.response ? error.response.body : error);
+        res.status(500).send({ error: "Error al enviar el correo." });
+    }
+});
+
 // ===================  contar COTIZACION  ===================
 
 
