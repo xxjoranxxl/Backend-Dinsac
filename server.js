@@ -9,6 +9,7 @@ const multer = require('multer');
 const PDFDocument = require('pdfkit');
 const sgMail = require('@sendgrid/mail');
 require('dotenv').config(); // ✅ UNA SOLA VEZ
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const app = express();
 const PORT = 3000;
@@ -29,8 +30,7 @@ console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Config
 console.log('📧 FROM_EMAIL:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
 console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO');
 
-// Configurar la API Key de SendGrid
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
 
 // Función helper para enviar correos con SendGrid
 async function enviarCorreoSendGrid(opciones) {
@@ -774,6 +774,11 @@ app.get('/interacciones', async (req, res) => {
   }
 });
 
+
+
+
+
+
 // =================== COTIZACIONES ===================
 app.post('/cotizaciones', async (req, res) => {
   try {
@@ -953,10 +958,6 @@ console.log('✅ Correo enviado exitosamente con SendGrid');
 
 
 
-
-
-
-// 🔹 Contar cotizaciones pendientes
 // 🔹 Contar cotizaciones pendientes (usando Mongoose)
 app.get('/cotizaciones/pendientes/total', async (req, res) => {
   try {
@@ -984,33 +985,126 @@ app.delete('/cotizaciones/:id', async (req, res) => {
 });
 
 
+// =================== ENVÍO DE COTIZACIÓN POR CORREO (REEMPLAZA EL MÉTODO EXISTENTE) ===================
 app.post('/send-email', async (req, res) => {
-    // Estas son las variables que debe enviar tu formulario HTML
-    const { email_del_destinatario, asunto, mensaje } = req.body; 
+  try {
+    console.log('📧 Recibiendo solicitud de cotización por correo...');
+    console.log('📥 Body recibido:', req.body);
 
-    if (!email_del_destinatario || !asunto || !mensaje) {
-        return res.status(400).send({ error: "Faltan campos obligatorios." });
+    const { 
+      email_del_destinatario, 
+      asunto, 
+      mensaje, 
+      nombre, 
+      dniRuc, 
+      telefonoMovil, 
+      contacto, 
+      productos,
+      numeroCotizacion 
+    } = req.body;
+
+    // ✅ Validación de campos obligatorios
+    if (!email_del_destinatario || !asunto || !nombre || !dniRuc || !telefonoMovil || !contacto) {
+      return res.status(400).json({ 
+        success: false,
+        error: "Faltan campos obligatorios (email, asunto, nombre, DNI/RUC, teléfono, contacto)" 
+      });
     }
+
+    if (!productos || productos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Debes agregar al menos un producto"
+      });
+    }
+
+    // ✅ Construir tabla HTML de productos
+    const productosHTML = productos.map((p, index) => `
+      <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
+        <td style="padding: 10px; border: 1px solid #ddd;">${p.categoria}</td>
+        <td style="padding: 10px; border: 1px solid #ddd;">${p.equipo}</td>
+        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${p.cantidad}</td>
+      </tr>
+    `).join('');
+
+    // ✅ Construir correo con SendGrid
+    const emailOwner = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
 
     const msg = {
-        to: email_del_destinatario, // <-- EL DESTINATARIO DEL FORMULARIO
-        from: process.env.FROM_EMAIL, // <-- TU CORREO VERIFICADO EN SENDGRID
-        subject: asunto,
-        html: `
-            <p><strong>Asunto:</strong> ${asunto}</p>
-            <hr>
-            <p><strong>Mensaje:</strong></p>
-            <p>${mensaje}</p>
-        `,
+      to: [email_del_destinatario, emailOwner], // ✅ Envía al cliente Y a la empresa
+      from: {
+        email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
+        name: 'Distribuidora Industrial S.A.C.'
+      },
+      subject: asunto,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+          <h2 style="color: #007bff; text-align: center;">
+            ${numeroCotizacion || 'Solicitud de Cotización'}
+          </h2>
+          
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Cliente:</strong> ${nombre}</p>
+            <p style="margin: 5px 0;"><strong>DNI/RUC:</strong> ${dniRuc}</p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${email_del_destinatario}</p>
+            <p style="margin: 5px 0;"><strong>Teléfono:</strong> ${telefonoMovil}</p>
+            <p style="margin: 5px 0;"><strong>Forma de contacto preferida:</strong> ${contacto}</p>
+            ${mensaje ? `<p style="margin: 5px 0;"><strong>Mensaje:</strong> ${mensaje}</p>` : ''}
+          </div>
+
+          <h3>Productos solicitados:</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+              <tr style="background: #007bff; color: white;">
+                <th style="padding: 10px; border: 1px solid #ddd;">Categoría</th>
+                <th style="padding: 10px; border: 1px solid #ddd;">Equipo</th>
+                <th style="padding: 10px; border: 1px solid #ddd;">Cantidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${productosHTML}
+            </tbody>
+          </table>
+
+          <p style="background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; color: #856404;">
+            ℹ️ <strong>Nota:</strong> Esta es una solicitud de cotización. Un representante se pondrá en contacto contigo pronto.
+          </p>
+
+          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 5px; margin-top: 20px;">
+            <p style="margin: 0; color: #666; font-size: 14px;">
+              <strong>Distribuidora Industrial S.A.C.</strong><br>
+              AV. CESAR VALLEJO 1005 ARANJUEZ TRUJILLO<br>
+              Tel: 938716412<br>
+              Email: Dinsac2021@gmail.com
+            </p>
+          </div>
+
+          <p style="font-size: 12px; color: #999; text-align: center; margin-top: 20px;">
+            Este correo fue generado automáticamente.
+          </p>
+        </div>
+      `
     };
 
-    try {
-        await sgMail.send(msg);
-        res.status(200).send({ message: `Correo enviado a ${email_del_destinatario} con éxito.` });
-    } catch (error) {
-        console.error("Error de SendGrid:", error.response ? error.response.body : error);
-        res.status(500).send({ error: "Error al enviar el correo." });
-    }
+    console.log(`📤 Enviando correo a: ${email_del_destinatario} y ${emailOwner}`);
+    
+    await sgMail.send(msg);
+    
+    console.log('✅ Correo enviado exitosamente');
+    
+    res.status(200).json({ 
+      success: true,
+      message: `Cotización enviada exitosamente a ${email_del_destinatario}` 
+    });
+
+  } catch (error) {
+    console.error("❌ Error de SendGrid:", error.response ? error.response.body : error);
+    res.status(500).json({ 
+      success: false,
+      error: "Error al enviar el correo.",
+      details: error.message 
+    });
+  }
 });
 
 // ===================  contar COTIZACION  ===================
@@ -1309,6 +1403,11 @@ app.put('/cotizaciones/:id', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error al actualizar el estado' });
   }
 });
+
+
+
+
+
 
 
 
