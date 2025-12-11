@@ -26,7 +26,7 @@ if (!fs.existsSync(uploadsDir)) {
 // =================== CONFIGURACIÓN DE SENDGRID ===================
 console.log('🔧 Configurando SendGrid...');
 console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
-console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
+console.log('📧 FROM_EMAIL:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
 console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO');
 
 // Configurar la API Key de SendGrid
@@ -38,7 +38,7 @@ async function enviarCorreoSendGrid(opciones) {
     const msg = {
       to: opciones.to,
       from: {
-        email: process.env.EMAIL_FROM || 'noreply@dinsac.com',
+        email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
         name: opciones.fromName || 'Distribuidora Industrial S.A.C.'
       },
       subject: opciones.subject,
