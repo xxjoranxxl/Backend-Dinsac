@@ -143,6 +143,11 @@ const productSchema = new mongoose.Schema({
   image2: { type: String, required: false },
   image3: { type: String, required: false },
   stock: { type: Number, required: true },
+  price: {
+  type: Number,
+  required: true,
+  min: 0
+},
   category: { type: String, required: true },
   estado: {
     type: String,
@@ -180,6 +185,8 @@ const cotizacionSchema = new mongoose.Schema({
 });
 const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 
+
+
 const ordenSchema = new mongoose.Schema({
   nombre: String,
   email: String,
@@ -199,6 +206,9 @@ const interaccionSchema = new mongoose.Schema({
   fecha: Date
 });
 const Interaccion = mongoose.model('Interaccion', interaccionSchema);
+
+
+
 
 // =================== CREAR ADMIN ===================
 async function createAdminUser() {
@@ -442,10 +452,11 @@ app.post('/products', async (req, res) => {
       console.log('✅ Código normalizado:', req.body.codigo);
     }
 
-    const { codigo, name, description, category, estado, stock } = req.body;
+    const { codigo, name, description, category, estado, stock, price  } = req.body;
+    
     
     // ✅ Validar campos obligatorios
-    if (!codigo || !name || !description || !category || !estado) {
+    if (!codigo || !name || !description || !category || !estado || price === undefined) {
       console.error('❌ Campos faltantes:', { codigo, name, description, category, estado });
       return res.status(400).json({
         message: "Faltan campos obligatorios",
@@ -454,7 +465,8 @@ app.post('/products', async (req, res) => {
           name: !name,
           description: !description,
           category: !category,
-          estado: !estado
+          estado: !estado,
+          price: !price
         },
         receivedData: req.body
       });
@@ -530,10 +542,10 @@ app.put('/products/:id', async (req, res) => {
       console.log('✅ Código normalizado:', req.body.codigo);
     }
     
-    const { codigo, name, description, category, estado, stock } = req.body;
+    const { codigo, name, description, category, estado, stock, price } = req.body;
     
     // ✅ Validar campos obligatorios
-    if (!codigo || !name || !description || !category || !estado) {
+    if (!codigo || !name || !description || !category || !estado || price === undefined) {
       console.error('❌ FALTAN CAMPOS OBLIGATORIOS');
       return res.status(400).json({
         message: 'Faltan campos obligatorios',
@@ -542,7 +554,8 @@ app.put('/products/:id', async (req, res) => {
           name: !name ? '❌ FALTA' : '✅',
           description: !description ? '❌ FALTA' : '✅',
           category: !category ? '❌ FALTA' : '✅',
-          estado: !estado ? '❌ FALTA' : '✅'
+          estado: !estado ? '❌ FALTA' : '✅',
+          price: !price ? '❌ FALTA' : '✅'
         }
       });
     }
@@ -1414,6 +1427,8 @@ app.put('/cotizaciones/:id', async (req, res) => {
 
 
 // =================== CHAT EN TIEMPO REAL ===================
+
+
 
 
 // =================== SCHEMAS ===================
