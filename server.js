@@ -143,11 +143,8 @@ const productSchema = new mongoose.Schema({
   image2: { type: String, required: false },
   image3: { type: String, required: false },
   stock: { type: Number, required: true },
-  price: {
-  type: Number,
-  required: true,
-  min: 0
-},
+  price: {  type: Number,  required: true,  min: 0},
+  precioReal: {    type: Number,     default: null   },
   category: { type: String, required: true },
   estado: {
     type: String,
@@ -157,7 +154,9 @@ const productSchema = new mongoose.Schema({
   videoURL: { type: String, required: false },
   featuresText: { type: String, required: false },
   tagsText: { type: String, required: false },
-  destacado: { type: Boolean, default: false }
+  destacado: { type: Boolean, default: false  }
+}, { 
+  timestamps: true // Agrega createdAt y updatedAt automáticamente
 });
 
 const Product = mongoose.model('Product', productSchema);
@@ -452,7 +451,7 @@ app.post('/products', async (req, res) => {
       console.log('✅ Código normalizado:', req.body.codigo);
     }
 
-    const { codigo, name, description, category, estado, stock, price  } = req.body;
+    const { codigo, name, description, category, estado, stock, price,precioReal   } = req.body;
     
     
     // ✅ Validar campos obligatorios
@@ -497,6 +496,27 @@ app.post('/products', async (req, res) => {
         receivedValue: estado
       });
     }
+ // ✅ VALIDACIÓN ESPECIAL PARA OFERTAS
+    if (estado === 'Oferta') {
+      if (!precioReal || precioReal <= 0) {
+        return res.status(400).json({
+          message: 'Para productos en oferta, el precio real es obligatorio y debe ser mayor a 0',
+          receivedPrecioReal: precioReal
+        });
+      }
+      if (price >= precioReal) {
+        return res.status(400).json({
+          message: 'El precio de oferta debe ser menor al precio real',
+          precioOferta: price,
+          precioReal: precioReal
+        });
+      }
+      req.body.precioReal = Number(precioReal);
+    } else {
+      // Si NO es oferta, eliminar precioReal
+      req.body.precioReal = null;
+    }
+
 
     // ✅ Normalizar stock
     req.body.stock = stock !== undefined ? Number(stock) : 0;
@@ -542,7 +562,7 @@ app.put('/products/:id', async (req, res) => {
       console.log('✅ Código normalizado:', req.body.codigo);
     }
     
-    const { codigo, name, description, category, estado, stock, price } = req.body;
+    const { codigo, name, description, category, estado, stock, price,precioReal  } = req.body;
     
     // ✅ Validar campos obligatorios
     if (!codigo || !name || !description || !category || !estado || price === undefined) {
@@ -567,7 +587,7 @@ app.put('/products/:id', async (req, res) => {
       return res.status(400).json({
         message: 'El código solo puede contener letras y números (sin espacios ni caracteres especiales)',
         receivedCode: codigo,
-        example: 'MT123, GEN2024, 200MG'
+        example: 'MT-123, GEN2024, 200MG, MT123'
       });
     }
 
@@ -593,6 +613,30 @@ app.put('/products/:id', async (req, res) => {
         receivedValue: estado
       });
     }
+
+
+    // ✅ VALIDACIÓN ESPECIAL PARA OFERTAS
+    if (estado === 'Oferta') {
+      if (!precioReal || precioReal <= 0) {
+        return res.status(400).json({
+          message: 'Para productos en oferta, el precio real es obligatorio y debe ser mayor a 0',
+          receivedPrecioReal: precioReal
+        });
+      }
+      if (price >= precioReal) {
+        return res.status(400).json({
+          message: 'El precio de oferta debe ser menor al precio real',
+          precioOferta: price,
+          precioReal: precioReal
+        });
+      }
+      req.body.precioReal = Number(precioReal);
+    } else {
+      // Si NO es oferta, eliminar precioReal
+      req.body.precioReal = null;
+    }
+
+
 
     // ✅ Normalizar stock
     if (stock !== undefined) {
