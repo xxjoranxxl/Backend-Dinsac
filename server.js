@@ -10,6 +10,7 @@ const PDFDocument = require('pdfkit');
 const sgMail = require('@sendgrid/mail');
 require('dotenv').config(); // ✅ UNA SOLA VEZ
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = 3000;
@@ -86,8 +87,6 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization'],
   credentials: true
 }));
-
-app.options('*', cors());
 
 app.use(express.json({ limit: '80mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
@@ -242,12 +241,17 @@ app.get('/users', async (req, res) => {
 
 app.post('/login', async (req, res) => {
   const { username, password } = req.body;
-  const user = await User.findOne({ username, password });
-  if (user) {
-    res.json({ message: 'Login successful', user });
-  } else {
-    res.status(401).json({ message: 'Invalid credentials' });
-  }
+const user = await User.findOne({ username });
+  if (!user) {
+  return res.status(401).json({ message: 'Usuario no encontrado' });
+}
+const isMatch = await bcrypt.compare(password, user.password);
+
+if (!isMatch) {
+  return res.status(401).json({ message: 'Contraseña incorrecta' });
+}
+res.json({ message: 'Login successful', user });
+
 });
 
 app.post('/register', async (req, res) => {
@@ -257,8 +261,15 @@ app.post('/register', async (req, res) => {
     if (existingUser) {
       return res.status(400).json({ message: 'El usuario ya existe' });
     }
-    const newUser = new User({ username, password, role: 'cliente' });
-    await newUser.save();
+const hashedPassword = await bcrypt.hash(password, 10);
+
+const newUser = new User({
+  username,
+  password: hashedPassword,
+  role: 'cliente'
+});
+
+await newUser.save();
     res.status(201).json({ message: 'Cliente registrado correctamente', user: newUser });
   } catch (err) {
     res.status(500).json({ message: 'Error al registrar cliente', error: err });
@@ -301,6 +312,8 @@ app.post('/clientes/register', async (req, res) => {
 
     await newCliente.save();
     console.log('✅ Cliente guardado en BD');
+
+
 
     // ✅ ENVIAR CORREO DE BIENVENIDA
     try {
@@ -929,6 +942,11 @@ app.post('/cotizaciones', async (req, res) => {
       console.log(`📧 FROM: ${process.env.EMAIL_FROM}`);
       console.log(`📧 TO: ${emailCliente}, ${emailEmpresa}`);
       console.log(`🔑 API KEY configurada: ${process.env.SENDGRID_API_KEY ? 'SÍ' : 'NO'}`);
+const cleanBase64 = pdfBase64.replace(
+  /^data:application\/pdf;base64,/,
+  ''
+);
+
 
 
 await enviarCorreoSendGrid({
@@ -979,12 +997,12 @@ await enviarCorreoSendGrid({
             </p>
           </div>
         `,
-        attachments: [{
-    content: pdfBase64,  // ⚠️ NOTA: Ya no usa pdfBuffer, usa directamente pdfBase64
-    filename: `Cotizacion_${numeroCotizacion}.pdf`,
-    type: 'application/pdf',
-    disposition: 'attachment'
-  }]
+attachments: [{
+  content: cleanBase64,
+  filename: `Cotizacion_${numeroCotizacion}.pdf`,
+  type: 'application/pdf',
+  disposition: 'attachment'
+}]
 });
 
 console.log('✅ Correo enviado exitosamente con SendGrid');
@@ -2014,6 +2032,7 @@ app.get('/test-sendgrid', async (req, res) => {
     console.log('🧪 Probando SendGrid...');
     console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM);
     console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
+
 
     await enviarCorreoSendGrid({
       to: 'monica.romeroz.2003@gmail.com',
