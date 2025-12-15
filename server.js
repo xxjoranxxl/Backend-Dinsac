@@ -872,6 +872,9 @@ app.post('/cotizaciones', async (req, res) => {
       });
     }
 
+    // ✅ GENERAR NÚMERO DE COTIZACIÓN
+
+
     let numeroCotizacion = req.body.numeroCotizacion;
 
     if (!numeroCotizacion) {
@@ -886,6 +889,8 @@ app.post('/cotizaciones', async (req, res) => {
       const numero = total + 1;
       numeroCotizacion = `COT-${numero.toString().padStart(8, '0')}`;
     }
+
+    // ✅ GUARDAR EN BASE DE DATOS
 
     const nuevaCotizacion = new Cotizacion({
       numeroCotizacion,
@@ -921,6 +926,10 @@ app.post('/cotizaciones', async (req, res) => {
       const emailEmpresa = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
 
       console.log(`📧 Enviando a: ${emailCliente} y ${emailEmpresa}`);
+      console.log(`📧 FROM: ${process.env.EMAIL_FROM}`);
+      console.log(`📧 TO: ${emailCliente}, ${emailEmpresa}`);
+      console.log(`🔑 API KEY configurada: ${process.env.SENDGRID_API_KEY ? 'SÍ' : 'NO'}`);
+
 
 await enviarCorreoSendGrid({
   to: [emailCliente, emailEmpresa],
@@ -979,19 +988,22 @@ await enviarCorreoSendGrid({
 });
 
 console.log('✅ Correo enviado exitosamente con SendGrid');
+emailEnviado = true;
 
-
-      emailEnviado = true;
 
     } catch (emailError) {
-      console.error('⚠️ Error al enviar correo:', emailError.message);
-      errorEmail = emailError.message;
+      console.error('⚠️ Error al enviar correo:', emailError);
+      console.error('⚠️ Error completo:', emailError.response?.body || emailError.message);
+      errorEmail = emailError.response?.body?.errors?.[0]?.message || emailError.message;
     }
 
+ // ✅ RESPUESTA CON INFORMACIÓN DE EMAIL
     res.status(201).json({ 
       success: true,
       message: `Cotización ${numeroCotizacion} guardada correctamente`,
       numeroCotizacion: numeroCotizacion,
+      emailEnviado: emailEnviado,  // ✅ AHORA SÍ SE ENVÍA
+      errorEmail: errorEmail,       // ✅ Y EL ERROR SI LO HAY
       data: {
         id: nuevaCotizacion._id,
         numeroCotizacion: numeroCotizacion,
