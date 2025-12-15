@@ -8,7 +8,9 @@ const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
 require('dotenv').config(); // ✅ UNA SOLA VEZ
-const nodemailer = require('nodemailer');
+const { Resend } = require('resend');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 const bcrypt = require('bcryptjs');
 
@@ -24,57 +26,37 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-
-
-const transporter = nodemailer.createTransport({
-  host: 'smtp-relay.brevo.com',
-  port: 587,
-  secure: false,
-  auth: {
-    user: '9e1edf001@smtp-brevo.com',
-    pass: 'z7R4qv9kKfAp0sZw'
-  }
-});
-
-// Verificar conexión al iniciar
-transporter.verify(function (error, success) {
-  if (error) {
-    console.error('❌ Error conectando con Brevo:', error);
-  } else {
-    console.log('✅ Brevo SMTP listo para enviar emails');
-  }
-});
+// =================== CONFIGURACIÓN DE NODEMAILER (UNA SOLA VEZ - GLOBAL) ===================
+// =================== CONFIGURACIÓN DE SENDGRID ===================
+console.log('🔧 Configurando SendGrid...');
+console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
+console.log('📧 FROM_EMAIL:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
+console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO');
 
 
 
-async function enviarCorreoBrevo({ to, subject, html, attachments }) {
+// Función helper para enviar correos con SendGrid
+async function enviarCorreoResend({ to, subject, html, attachments }) {
   try {
-    console.log('📧 Enviando correo con BREVO SMTP...');
-    console.log('📧 Destinatarios:', to);
+    console.log('📧 Enviando correo con RESEND...');
 
-    const mailOptions = {
-      from: '"Distribuidora Industrial S.A.C." <notificaciones@dinsac.com>',
-      to: Array.isArray(to) ? to.join(', ') : to,
-      subject: subject,
-      html: html,
-      attachments: attachments || []
-    };
+    const response = await resend.emails.send({
+      from: `Distribuidora Industrial S.A.C. <${process.env.EMAIL_FROM}>`,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html,
+      attachments
+    });
 
-    const info = await transporter.sendMail(mailOptions);
-    
-    console.log('✅ Correo enviado exitosamente');
-    console.log('📬 Message ID:', info.messageId);
-    
-    return {
-      success: true,
-      messageId: info.messageId
-    };
+    console.log('✅ Correo enviado con Resend:', response);
+    return response;
 
   } catch (error) {
-    console.error('❌ Error enviando correo con Brevo:', error);
+    console.error('❌ Error con Resend:', error);
     throw error;
   }
 }
+
 
 // 🔥 INICIALIZAR SOCKET.IO
 const io = new Server(server, {
@@ -229,24 +211,15 @@ const Interaccion = mongoose.model('Interaccion', interaccionSchema);
 // =================== CREAR ADMIN ===================
 async function createAdminUser() {
   const admin = await User.findOne({ username: 'admin' });
-
   if (!admin) {
-    const hashedPassword = await bcrypt.hash('admin123', 10);
-
-    const newAdmin = new User({
-      username: 'admin',
-      password: hashedPassword,
-      role: 'admin'
-    });
-
+    const newAdmin = new User({ username: 'admin', password: 'admin123', role: 'admin' });
     await newAdmin.save();
-    console.log('✅ Admin user created');
+    console.log('Admin user created');
   } else {
     console.log('Admin user already exists');
   }
 }
-createAdminUser(); // 🔥 ESTA LÍNEA ES CLAVE
-
+createAdminUser();
 
 // =================== RUTAS BASE ===================
 app.get('/', (req, res) => {
@@ -344,7 +317,7 @@ app.post('/clientes/register', async (req, res) => {
 
     // ✅ ENVIAR CORREO DE BIENVENIDA
     try {
-await enviarCorreoBrevo({
+  await enviarCorreoSendGrid({
     to: email,
         subject: '🎉 ¡Bienvenido a DINSAC!',
         html: `
@@ -370,7 +343,7 @@ await enviarCorreoBrevo({
           </div>
         `
   });
-  console.log('✅ Correo de bienvenida enviado con a:', email);
+  console.log('✅ Correo de bienvenida enviado con SendGrid a:', email);
     } catch (emailError) {
       console.error('⚠️ Error al enviar correo de bienvenida:', emailError.message);
     }
@@ -820,7 +793,7 @@ app.post('/ordenes', async (req, res) => {
 
     const mensaje = `Hola ${nombre},\n\nGracias por tu compra en DINSAC.\n\nResumen:\n${resumen}\n\nTotal: S/ ${total}\n\nSaludos,\nEquipo DINSAC`;
 
-await enviarCorreoBrevo({
+await enviarCorreoSendGrid({
   to: email,
   subject: '🧾 Confirmación de tu compra en DINSAC',
   html: `
@@ -977,7 +950,7 @@ app.post('/cotizaciones', async (req, res) => {
 
 
 
-await enviarCorreoBrevo({
+await enviarCorreoResend({
     to: [emailCliente, emailEmpresa],
   subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
   html: `
@@ -1025,16 +998,15 @@ await enviarCorreoBrevo({
             </p>
           </div>
         `,
-attachments: [
-    {
-      filename: `Cotizacion_${numeroCotizacion}.pdf`,
-      content: cleanBase64,
-      contentType: 'application/pdf'
-    }
-  ]
+attachments: [{
+  content: cleanBase64,
+  filename: `Cotizacion_${numeroCotizacion}.pdf`,
+  type: 'application/pdf',
+  disposition: 'attachment'
+}]
 });
 
-console.log('✅ Correo enviado exitosamente ');
+console.log('✅ Correo enviado exitosamente con SendGrid');
 emailEnviado = true;
 
 
@@ -1143,6 +1115,7 @@ app.post('/send-email', async (req, res) => {
       </tr>
     `).join('');
 
+    // ✅ Construir correo con SendGrid
     const emailOwner = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
 
     const msg = {
@@ -1213,6 +1186,7 @@ app.post('/send-email', async (req, res) => {
     });
 
   } catch (error) {
+    console.error("❌ Error de SendGrid:", error.response ? error.response.body : error);
     res.status(500).json({ 
       success: false,
       error: "Error al enviar el correo.",
@@ -2048,6 +2022,50 @@ app.delete('/banner', async (req, res) => {
       success: false,
       mensaje: "Error interno del servidor",
       error: error.message
+    });
+  }
+});
+
+ 
+// =================== TEST SENDGRID ===================
+app.get('/test-sendgrid', async (req, res) => {
+  try {
+    console.log('🧪 Probando SendGrid...');
+    console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM);
+    console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
+
+
+    await enviarCorreoSendGrid({
+      to: 'monica.romeroz.2003@gmail.com',
+      subject: '✅ Prueba SendGrid - DINSAC',
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>✅ SendGrid funciona correctamente</h2>
+          <p>Este es un email de prueba desde tu backend en Render.</p>
+          <p><strong>Configuración actual:</strong></p>
+          <ul>
+            <li>EMAIL_FROM: ${process.env.EMAIL_FROM || '❌ NO CONFIGURADO'}</li>
+            <li>EMAIL_OWNER: ${process.env.EMAIL_OWNER || '❌ NO CONFIGURADO'}</li>
+          </ul>
+        </div>
+      `
+    });
+
+    res.json({
+      success: true,
+      message: '✅ Correo enviado con éxito',
+      config: {
+        from: process.env.EMAIL_FROM,
+        owner: process.env.EMAIL_OWNER,
+        hasApiKey: !!process.env.SENDGRID_API_KEY
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error en prueba:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.response?.body || null
     });
   }
 });
