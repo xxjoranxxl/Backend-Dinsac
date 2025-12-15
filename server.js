@@ -38,7 +38,7 @@ async function enviarCorreoSendGrid(opciones) {
     const msg = {
       to: opciones.to,
       from: {
-        email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
+        email: process.env.EMAIL_FROM || '25monica.rz@gmail.com',
         name: opciones.fromName || 'Distribuidora Industrial S.A.C.'
       },
       subject: opciones.subject,
@@ -1090,7 +1090,7 @@ app.post('/send-email', async (req, res) => {
     const msg = {
       to: [email_del_destinatario, emailOwner], // ✅ Envía al cliente Y a la empresa
       from: {
-        email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
+        email: process.env.EMAIL_FROM || '25monica.rz@gmail.com',
         name: 'Distribuidora Industrial S.A.C.'
       },
       subject: asunto,
@@ -1163,6 +1163,11 @@ app.post('/send-email', async (req, res) => {
     });
   }
 });
+
+
+
+
+
 
 // ===================  contar COTIZACION  ===================
 
@@ -1991,6 +1996,52 @@ app.delete('/banner', async (req, res) => {
 });
 
  
+// =================== TEST SENDGRID ===================
+app.get('/test-sendgrid', async (req, res) => {
+  try {
+    console.log('🧪 Probando SendGrid...');
+    console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM);
+    console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
+
+    await enviarCorreoSendGrid({
+      to: 'monica.romeroz.2003@gmail.com',
+      subject: '✅ Prueba SendGrid - DINSAC',
+      html: `
+        <div style="font-family: Arial, sans-serif; padding: 20px;">
+          <h2>✅ SendGrid funciona correctamente</h2>
+          <p>Este es un email de prueba desde tu backend en Render.</p>
+          <p><strong>Configuración actual:</strong></p>
+          <ul>
+            <li>EMAIL_FROM: ${process.env.EMAIL_FROM || '❌ NO CONFIGURADO'}</li>
+            <li>EMAIL_OWNER: ${process.env.EMAIL_OWNER || '❌ NO CONFIGURADO'}</li>
+          </ul>
+        </div>
+      `
+    });
+
+    res.json({
+      success: true,
+      message: '✅ Correo enviado con éxito',
+      config: {
+        from: process.env.EMAIL_FROM,
+        owner: process.env.EMAIL_OWNER,
+        hasApiKey: !!process.env.SENDGRID_API_KEY
+      }
+    });
+  } catch (error) {
+    console.error('❌ Error en prueba:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+      details: error.response?.body || null
+    });
+  }
+});
+
+
+
+
+
 
 // =================== FIN PRODUCTOS ===================
 
