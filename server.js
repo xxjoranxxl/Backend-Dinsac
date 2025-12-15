@@ -7,9 +7,10 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
-const sgMail = require('@sendgrid/mail');
-require('dotenv').config(); // ✅ UNA SOLA VEZ
-sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+const { Resend } = require('resend');
+
+const resend = new Resend(process.env.RESEND_API_KEY);
+
 const bcrypt = require('bcryptjs');
 
 const app = express();
@@ -24,39 +25,28 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir);
 }
 
-// =================== CONFIGURACIÓN DE NODEMAILER (UNA SOLA VEZ - GLOBAL) ===================
-// =================== CONFIGURACIÓN DE SENDGRID ===================
-console.log('🔧 Configurando SendGrid...');
-console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
-console.log('📧 FROM_EMAIL:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
-console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO');
 
-
-
-// Función helper para enviar correos con SendGrid
-async function enviarCorreoSendGrid(opciones) {
+async function enviarCorreoResend({ to, subject, html, attachments }) {
   try {
-    const msg = {
-      to: opciones.to,
-      from: {
-        email: process.env.EMAIL_FROM || '25monica.rz@gmail.com',
-        name: opciones.fromName || 'Distribuidora Industrial S.A.C.'
-      },
-      subject: opciones.subject,
-      html: opciones.html,
-      text: opciones.text || opciones.html.replace(/<[^>]*>/g, ''),
-      attachments: opciones.attachments || []
-    };
+    console.log('📧 Enviando correo con RESEND...');
 
-    console.log(`📧 Enviando correo a: ${opciones.to}`);
-    const response = await sgMail.send(msg);
-    console.log('✅ Correo enviado exitosamente:', response[0].statusCode);
-    return { success: true, messageId: response[0].headers['x-message-id'] };
+    const response = await resend.emails.send({
+      from: `Distribuidora Industrial S.A.C. <${process.env.EMAIL_FROM}>`,
+      to: Array.isArray(to) ? to : [to],
+      subject,
+      html,
+      attachments
+    });
+
+    console.log('✅ Correo enviado con Resend:', response);
+    return response;
+
   } catch (error) {
-    console.error('❌ Error enviando correo con SendGrid:', error.response?.body || error.message);
+    console.error('❌ Error con Resend:', error);
     throw error;
   }
 }
+
 
 // 🔥 INICIALIZAR SOCKET.IO
 const io = new Server(server, {
@@ -317,7 +307,7 @@ app.post('/clientes/register', async (req, res) => {
 
     // ✅ ENVIAR CORREO DE BIENVENIDA
     try {
-  await enviarCorreoSendGrid({
+await enviarCorreoResend({
     to: email,
         subject: '🎉 ¡Bienvenido a DINSAC!',
         html: `
@@ -343,7 +333,7 @@ app.post('/clientes/register', async (req, res) => {
           </div>
         `
   });
-  console.log('✅ Correo de bienvenida enviado con SendGrid a:', email);
+  console.log('✅ Correo de bienvenida enviado con a:', email);
     } catch (emailError) {
       console.error('⚠️ Error al enviar correo de bienvenida:', emailError.message);
     }
@@ -793,7 +783,7 @@ app.post('/ordenes', async (req, res) => {
 
     const mensaje = `Hola ${nombre},\n\nGracias por tu compra en DINSAC.\n\nResumen:\n${resumen}\n\nTotal: S/ ${total}\n\nSaludos,\nEquipo DINSAC`;
 
-await enviarCorreoSendGrid({
+await enviarCorreoResend({
   to: email,
   subject: '🧾 Confirmación de tu compra en DINSAC',
   html: `
@@ -941,16 +931,16 @@ app.post('/cotizaciones', async (req, res) => {
       console.log(`📧 Enviando a: ${emailCliente} y ${emailEmpresa}`);
       console.log(`📧 FROM: ${process.env.EMAIL_FROM}`);
       console.log(`📧 TO: ${emailCliente}, ${emailEmpresa}`);
-      console.log(`🔑 API KEY configurada: ${process.env.SENDGRID_API_KEY ? 'SÍ' : 'NO'}`);
-const cleanBase64 = pdfBase64.replace(
+
+      const cleanBase64 = pdfBase64.replace(
   /^data:application\/pdf;base64,/,
   ''
 );
 
 
 
-await enviarCorreoSendGrid({
-  to: [emailCliente, emailEmpresa],
+await enviarCorreoResend({
+    to: [emailCliente, emailEmpresa],
   subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
   html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
@@ -997,15 +987,16 @@ await enviarCorreoSendGrid({
             </p>
           </div>
         `,
-attachments: [{
-  content: cleanBase64,
-  filename: `Cotizacion_${numeroCotizacion}.pdf`,
-  type: 'application/pdf',
-  disposition: 'attachment'
-}]
+attachments: [
+    {
+      filename: `Cotizacion_${numeroCotizacion}.pdf`,
+      content: cleanBase64,
+      contentType: 'application/pdf'
+    }
+  ]
 });
 
-console.log('✅ Correo enviado exitosamente con SendGrid');
+console.log('✅ Correo enviado exitosamente ');
 emailEnviado = true;
 
 
@@ -1068,129 +1059,6 @@ app.delete('/cotizaciones/:id', async (req, res) => {
   } catch (error) {
     console.error('Error al eliminar cotización:', error);
     res.status(500).json({ message: 'Error al eliminar cotización' });
-  }
-});
-
-
-// =================== ENVÍO DE COTIZACIÓN POR CORREO (REEMPLAZA EL MÉTODO EXISTENTE) ===================
-app.post('/send-email', async (req, res) => {
-  try {
-    console.log('📧 Recibiendo solicitud de cotización por correo...');
-    console.log('📥 Body recibido:', req.body);
-
-    const { 
-      email_del_destinatario, 
-      asunto, 
-      mensaje, 
-      nombre, 
-      dniRuc, 
-      telefonoMovil, 
-      contacto, 
-      productos,
-      numeroCotizacion 
-    } = req.body;
-
-    // ✅ Validación de campos obligatorios
-    if (!email_del_destinatario || !asunto || !nombre || !dniRuc || !telefonoMovil || !contacto) {
-      return res.status(400).json({ 
-        success: false,
-        error: "Faltan campos obligatorios (email, asunto, nombre, DNI/RUC, teléfono, contacto)" 
-      });
-    }
-
-    if (!productos || productos.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Debes agregar al menos un producto"
-      });
-    }
-
-    // ✅ Construir tabla HTML de productos
-    const productosHTML = productos.map((p, index) => `
-      <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
-        <td style="padding: 10px; border: 1px solid #ddd;">${p.categoria}</td>
-        <td style="padding: 10px; border: 1px solid #ddd;">${p.equipo}</td>
-        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${p.cantidad}</td>
-      </tr>
-    `).join('');
-
-    // ✅ Construir correo con SendGrid
-    const emailOwner = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
-
-    const msg = {
-      to: [email_del_destinatario, emailOwner], // ✅ Envía al cliente Y a la empresa
-      from: {
-        email: process.env.EMAIL_FROM || '25monica.rz@gmail.com',
-        name: 'Distribuidora Industrial S.A.C.'
-      },
-      subject: asunto,
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-          <h2 style="color: #007bff; text-align: center;">
-            ${numeroCotizacion || 'Solicitud de Cotización'}
-          </h2>
-          
-          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Cliente:</strong> ${nombre}</p>
-            <p style="margin: 5px 0;"><strong>DNI/RUC:</strong> ${dniRuc}</p>
-            <p style="margin: 5px 0;"><strong>Email:</strong> ${email_del_destinatario}</p>
-            <p style="margin: 5px 0;"><strong>Teléfono:</strong> ${telefonoMovil}</p>
-            <p style="margin: 5px 0;"><strong>Forma de contacto preferida:</strong> ${contacto}</p>
-            ${mensaje ? `<p style="margin: 5px 0;"><strong>Mensaje:</strong> ${mensaje}</p>` : ''}
-          </div>
-
-          <h3>Productos solicitados:</h3>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <thead>
-              <tr style="background: #007bff; color: white;">
-                <th style="padding: 10px; border: 1px solid #ddd;">Categoría</th>
-                <th style="padding: 10px; border: 1px solid #ddd;">Equipo</th>
-                <th style="padding: 10px; border: 1px solid #ddd;">Cantidad</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${productosHTML}
-            </tbody>
-          </table>
-
-          <p style="background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; color: #856404;">
-            ℹ️ <strong>Nota:</strong> Esta es una solicitud de cotización. Un representante se pondrá en contacto contigo pronto.
-          </p>
-
-          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 5px; margin-top: 20px;">
-            <p style="margin: 0; color: #666; font-size: 14px;">
-              <strong>Distribuidora Industrial S.A.C.</strong><br>
-              AV. CESAR VALLEJO 1005 ARANJUEZ TRUJILLO<br>
-              Tel: 938716412<br>
-              Email: Dinsac2021@gmail.com
-            </p>
-          </div>
-
-          <p style="font-size: 12px; color: #999; text-align: center; margin-top: 20px;">
-            Este correo fue generado automáticamente.
-          </p>
-        </div>
-      `
-    };
-
-    console.log(`📤 Enviando correo a: ${email_del_destinatario} y ${emailOwner}`);
-    
-    await sgMail.send(msg);
-    
-    console.log('✅ Correo enviado exitosamente');
-    
-    res.status(200).json({ 
-      success: true,
-      message: `Cotización enviada exitosamente a ${email_del_destinatario}` 
-    });
-
-  } catch (error) {
-    console.error("❌ Error de SendGrid:", error.response ? error.response.body : error);
-    res.status(500).json({ 
-      success: false,
-      error: "Error al enviar el correo.",
-      details: error.message 
-    });
   }
 });
 
@@ -2021,50 +1889,6 @@ app.delete('/banner', async (req, res) => {
       success: false,
       mensaje: "Error interno del servidor",
       error: error.message
-    });
-  }
-});
-
- 
-// =================== TEST SENDGRID ===================
-app.get('/test-sendgrid', async (req, res) => {
-  try {
-    console.log('🧪 Probando SendGrid...');
-    console.log('📧 EMAIL_FROM:', process.env.EMAIL_FROM);
-    console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
-
-
-    await enviarCorreoSendGrid({
-      to: 'monica.romeroz.2003@gmail.com',
-      subject: '✅ Prueba SendGrid - DINSAC',
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2>✅ SendGrid funciona correctamente</h2>
-          <p>Este es un email de prueba desde tu backend en Render.</p>
-          <p><strong>Configuración actual:</strong></p>
-          <ul>
-            <li>EMAIL_FROM: ${process.env.EMAIL_FROM || '❌ NO CONFIGURADO'}</li>
-            <li>EMAIL_OWNER: ${process.env.EMAIL_OWNER || '❌ NO CONFIGURADO'}</li>
-          </ul>
-        </div>
-      `
-    });
-
-    res.json({
-      success: true,
-      message: '✅ Correo enviado con éxito',
-      config: {
-        from: process.env.EMAIL_FROM,
-        owner: process.env.EMAIL_OWNER,
-        hasApiKey: !!process.env.SENDGRID_API_KEY
-      }
-    });
-  } catch (error) {
-    console.error('❌ Error en prueba:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message,
-      details: error.response?.body || null
     });
   }
 });
