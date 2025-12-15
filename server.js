@@ -229,15 +229,24 @@ const Interaccion = mongoose.model('Interaccion', interaccionSchema);
 // =================== CREAR ADMIN ===================
 async function createAdminUser() {
   const admin = await User.findOne({ username: 'admin' });
+
   if (!admin) {
-    const newAdmin = new User({ username: 'admin', password: 'admin123', role: 'admin' });
+    const hashedPassword = await bcrypt.hash('admin123', 10);
+
+    const newAdmin = new User({
+      username: 'admin',
+      password: hashedPassword,
+      role: 'admin'
+    });
+
     await newAdmin.save();
-    console.log('Admin user created');
+    console.log('✅ Admin user created');
   } else {
     console.log('Admin user already exists');
   }
 }
-createAdminUser();
+createAdminUser(); // 🔥 ESTA LÍNEA ES CLAVE
+
 
 // =================== RUTAS BASE ===================
 app.get('/', (req, res) => {
