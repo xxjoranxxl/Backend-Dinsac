@@ -7,9 +7,8 @@ const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
-const { Resend } = require('resend');
-
-const resend = new Resend(process.env.RESEND_API_KEY);
+require('dotenv').config(); // ✅ UNA SOLA VEZ
+const nodemailer = require('nodemailer');
 
 const bcrypt = require('bcryptjs');
 
@@ -26,27 +25,56 @@ if (!fs.existsSync(uploadsDir)) {
 }
 
 
-async function enviarCorreoResend({ to, subject, html, attachments }) {
+
+const transporter = nodemailer.createTransport({
+  host: 'smtp-relay.brevo.com',
+  port: 587,
+  secure: false,
+  auth: {
+    user: '9e1edf001@smtp-brevo.com',
+    pass: 'z7R4qv9kKfAp0sZw'
+  }
+});
+
+// Verificar conexión al iniciar
+transporter.verify(function (error, success) {
+  if (error) {
+    console.error('❌ Error conectando con Brevo:', error);
+  } else {
+    console.log('✅ Brevo SMTP listo para enviar emails');
+  }
+});
+
+
+
+async function enviarCorreoBrevo({ to, subject, html, attachments }) {
   try {
-    console.log('📧 Enviando correo con RESEND...');
+    console.log('📧 Enviando correo con BREVO SMTP...');
+    console.log('📧 Destinatarios:', to);
 
-    const response = await resend.emails.send({
-      from: `Distribuidora Industrial S.A.C. <${process.env.EMAIL_FROM}>`,
-      to: Array.isArray(to) ? to : [to],
-      subject,
-      html,
-      attachments
-    });
+    const mailOptions = {
+      from: '"Distribuidora Industrial S.A.C." <notificaciones@dinsac.com>',
+      to: Array.isArray(to) ? to.join(', ') : to,
+      subject: subject,
+      html: html,
+      attachments: attachments || []
+    };
 
-    console.log('✅ Correo enviado con Resend:', response);
-    return response;
+    const info = await transporter.sendMail(mailOptions);
+    
+    console.log('✅ Correo enviado exitosamente');
+    console.log('📬 Message ID:', info.messageId);
+    
+    return {
+      success: true,
+      messageId: info.messageId
+    };
 
   } catch (error) {
-    console.error('❌ Error con Resend:', error);
+    console.error('❌ Error enviando correo con Brevo:', error);
     throw error;
   }
 }
-
 
 // 🔥 INICIALIZAR SOCKET.IO
 const io = new Server(server, {
@@ -307,7 +335,7 @@ app.post('/clientes/register', async (req, res) => {
 
     // ✅ ENVIAR CORREO DE BIENVENIDA
     try {
-await enviarCorreoResend({
+await enviarCorreoBrevo({
     to: email,
         subject: '🎉 ¡Bienvenido a DINSAC!',
         html: `
@@ -783,7 +811,7 @@ app.post('/ordenes', async (req, res) => {
 
     const mensaje = `Hola ${nombre},\n\nGracias por tu compra en DINSAC.\n\nResumen:\n${resumen}\n\nTotal: S/ ${total}\n\nSaludos,\nEquipo DINSAC`;
 
-await enviarCorreoResend({
+await enviarCorreoBrevo({
   to: email,
   subject: '🧾 Confirmación de tu compra en DINSAC',
   html: `
@@ -931,6 +959,7 @@ app.post('/cotizaciones', async (req, res) => {
       console.log(`📧 Enviando a: ${emailCliente} y ${emailEmpresa}`);
       console.log(`📧 FROM: ${process.env.EMAIL_FROM}`);
       console.log(`📧 TO: ${emailCliente}, ${emailEmpresa}`);
+      console.log(`🔑 API KEY configurada: ${process.env.SENDGRID_API_KEY ? 'SÍ' : 'NO'}`);
 
       const cleanBase64 = pdfBase64.replace(
   /^data:application\/pdf;base64,/,
@@ -939,7 +968,7 @@ app.post('/cotizaciones', async (req, res) => {
 
 
 
-await enviarCorreoResend({
+await enviarCorreoBrevo({
     to: [emailCliente, emailEmpresa],
   subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
   html: `
@@ -1059,6 +1088,127 @@ app.delete('/cotizaciones/:id', async (req, res) => {
   } catch (error) {
     console.error('Error al eliminar cotización:', error);
     res.status(500).json({ message: 'Error al eliminar cotización' });
+  }
+});
+
+
+// =================== ENVÍO DE COTIZACIÓN POR CORREO (REEMPLAZA EL MÉTODO EXISTENTE) ===================
+app.post('/send-email', async (req, res) => {
+  try {
+    console.log('📧 Recibiendo solicitud de cotización por correo...');
+    console.log('📥 Body recibido:', req.body);
+
+    const { 
+      email_del_destinatario, 
+      asunto, 
+      mensaje, 
+      nombre, 
+      dniRuc, 
+      telefonoMovil, 
+      contacto, 
+      productos,
+      numeroCotizacion 
+    } = req.body;
+
+    // ✅ Validación de campos obligatorios
+    if (!email_del_destinatario || !asunto || !nombre || !dniRuc || !telefonoMovil || !contacto) {
+      return res.status(400).json({ 
+        success: false,
+        error: "Faltan campos obligatorios (email, asunto, nombre, DNI/RUC, teléfono, contacto)" 
+      });
+    }
+
+    if (!productos || productos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: "Debes agregar al menos un producto"
+      });
+    }
+
+    // ✅ Construir tabla HTML de productos
+    const productosHTML = productos.map((p, index) => `
+      <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
+        <td style="padding: 10px; border: 1px solid #ddd;">${p.categoria}</td>
+        <td style="padding: 10px; border: 1px solid #ddd;">${p.equipo}</td>
+        <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${p.cantidad}</td>
+      </tr>
+    `).join('');
+
+    const emailOwner = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
+
+    const msg = {
+      to: [email_del_destinatario, emailOwner], // ✅ Envía al cliente Y a la empresa
+      from: {
+        email: process.env.EMAIL_FROM || '25monica.rz@gmail.com',
+        name: 'Distribuidora Industrial S.A.C.'
+      },
+      subject: asunto,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+          <h2 style="color: #007bff; text-align: center;">
+            ${numeroCotizacion || 'Solicitud de Cotización'}
+          </h2>
+          
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Cliente:</strong> ${nombre}</p>
+            <p style="margin: 5px 0;"><strong>DNI/RUC:</strong> ${dniRuc}</p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${email_del_destinatario}</p>
+            <p style="margin: 5px 0;"><strong>Teléfono:</strong> ${telefonoMovil}</p>
+            <p style="margin: 5px 0;"><strong>Forma de contacto preferida:</strong> ${contacto}</p>
+            ${mensaje ? `<p style="margin: 5px 0;"><strong>Mensaje:</strong> ${mensaje}</p>` : ''}
+          </div>
+
+          <h3>Productos solicitados:</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+              <tr style="background: #007bff; color: white;">
+                <th style="padding: 10px; border: 1px solid #ddd;">Categoría</th>
+                <th style="padding: 10px; border: 1px solid #ddd;">Equipo</th>
+                <th style="padding: 10px; border: 1px solid #ddd;">Cantidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${productosHTML}
+            </tbody>
+          </table>
+
+          <p style="background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; color: #856404;">
+            ℹ️ <strong>Nota:</strong> Esta es una solicitud de cotización. Un representante se pondrá en contacto contigo pronto.
+          </p>
+
+          <div style="text-align: center; padding: 15px; background: #f8f9fa; border-radius: 5px; margin-top: 20px;">
+            <p style="margin: 0; color: #666; font-size: 14px;">
+              <strong>Distribuidora Industrial S.A.C.</strong><br>
+              AV. CESAR VALLEJO 1005 ARANJUEZ TRUJILLO<br>
+              Tel: 938716412<br>
+              Email: Dinsac2021@gmail.com
+            </p>
+          </div>
+
+          <p style="font-size: 12px; color: #999; text-align: center; margin-top: 20px;">
+            Este correo fue generado automáticamente.
+          </p>
+        </div>
+      `
+    };
+
+    console.log(`📤 Enviando correo a: ${email_del_destinatario} y ${emailOwner}`);
+    
+    await sgMail.send(msg);
+    
+    console.log('✅ Correo enviado exitosamente');
+    
+    res.status(200).json({ 
+      success: true,
+      message: `Cotización enviada exitosamente a ${email_del_destinatario}` 
+    });
+
+  } catch (error) {
+    res.status(500).json({ 
+      success: false,
+      error: "Error al enviar el correo.",
+      details: error.message 
+    });
   }
 });
 
