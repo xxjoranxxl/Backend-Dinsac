@@ -33,26 +33,63 @@ console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO'
 
 
 // Función helper para enviar correos con SendGrid
-async function enviarCorreoSendGrid(opciones) {
+async function enviarCorreoSendGrid({ to, subject, html, attachments }) {
+  console.log('\n🔧 [SENDGRID] Iniciando función enviarCorreoSendGrid...');
+  console.log('   - Destinatarios:', to);
+  console.log('   - Asunto:', subject);
+  console.log('   - Tiene HTML:', !!html);
+  console.log('   - Adjuntos:', attachments?.length || 0);
+  
   try {
+    console.log('🔧 [SENDGRID] Verificando configuración...');
+    
+    if (!process.env.SENDGRID_API_KEY) {
+      throw new Error('SENDGRID_API_KEY no está configurada');
+    }
+    
+    console.log('🔧 [SENDGRID] Configurando sgMail...');
+    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+    
+    console.log('🔧 [SENDGRID] Preparando mensaje...');
     const msg = {
-      to: opciones.to,
+      to: to,
       from: {
         email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
-        name: opciones.fromName || 'Distribuidora Industrial S.A.C.'
+        name: 'Distribuidora Industrial S.A.C.'
       },
-      subject: opciones.subject,
-      html: opciones.html,
-      text: opciones.text || opciones.html.replace(/<[^>]*>/g, ''),
-      attachments: opciones.attachments || []
+      subject: subject,
+      html: html,
+      attachments: attachments || []
     };
-
-    console.log(`📧 Enviando correo a: ${opciones.to}`);
-    const response = await sgMail.send(msg);
-    console.log('✅ Correo enviado exitosamente:', response[0].statusCode);
-    return { success: true, messageId: response[0].headers['x-message-id'] };
+    
+    console.log('🔧 [SENDGRID] Mensaje preparado:', JSON.stringify({
+      ...msg,
+      html: '[HTML CONTENT]',
+      attachments: msg.attachments.map(a => ({ ...a, content: '[BASE64 DATA]' }))
+    }, null, 2));
+    
+    console.log('🔧 [SENDGRID] Enviando mensaje...');
+    const result = await sgMail.send(msg);
+    
+    console.log('✅ [SENDGRID] Mensaje enviado exitosamente');
+    console.log('   - Status Code:', result[0]?.statusCode);
+    console.log('   - Response:', JSON.stringify(result[0]?.headers, null, 2));
+    
+    return result;
+    
   } catch (error) {
-    console.error('❌ Error enviando correo con SendGrid:', error.response?.body || error.message);
+    console.error('\n❌ [SENDGRID ERROR] Error en enviarCorreoSendGrid:');
+    console.error('   - Tipo:', error.constructor.name);
+    console.error('   - Mensaje:', error.message);
+    console.error('   - Código:', error.code);
+    
+    if (error.response) {
+      console.error('   - Response Status:', error.response.status);
+      console.error('   - Response Headers:', JSON.stringify(error.response.headers, null, 2));
+      console.error('   - Response Body:', JSON.stringify(error.response.body, null, 2));
+    }
+    
+    console.error('   - Stack:', error.stack);
     throw error;
   }
 }
@@ -88,8 +125,9 @@ app.use(cors({
 }));
 
 app.options('*', cors());
+  
+app.use(express.json({ limit: '50mb' }));
 
-app.use(express.json({ limit: '80mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static('uploads'));
 
@@ -414,6 +452,21 @@ app.delete('/clientes/:id', async (req, res) => {
     res.status(500).json({ message: 'Error eliminando cliente', error: err.message });
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -836,14 +889,38 @@ app.get('/interacciones', async (req, res) => {
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // =================== COTIZACIONES ===================
 app.post('/cotizaciones', async (req, res) => {
   try {
     console.log('📧 Procesando cotización...');
+    console.log('📧 [INICIO] Procesando cotización...');
+    console.log('===========================================');
+    console.log('📥 Body recibido:', JSON.stringify(req.body, null, 2));
 
     const { nombre, dniRuc, email, telefonoMovil, contacto, productos, pdfBase64 } = req.body;
 
     if (!nombre || !dniRuc || !email || !telefonoMovil || !contacto) {
+      console.error('❌ [ERROR] Faltan campos obligatorios');
+      console.error('   - nombre:', !!nombre);
+      console.error('   - dniRuc:', !!dniRuc);
+      console.error('   - email:', !!email);
+      console.error('   - telefonoMovil:', !!telefonoMovil);
+      console.error('   - contacto:', !!contacto);
       return res.status(400).json({
         success: false,
         message: 'Faltan campos obligatorios'
@@ -851,18 +928,22 @@ app.post('/cotizaciones', async (req, res) => {
     }
 
     if (!productos || productos.length === 0) {
+      console.error('❌ [ERROR] No hay productos en la cotización');
       return res.status(400).json({
         success: false,
         message: 'Debes agregar al menos un producto'
       });
     }
+    console.log('✅ [VALIDACIÓN] Productos encontrados:', productos.length);
 
     if (!pdfBase64) {
+      console.error('❌ [ERROR] No se recibió el PDF');
       return res.status(400).json({
         success: false,
         message: 'No se recibió el PDF'
       });
     }
+    console.log('✅ [VALIDACIÓN] PDF recibido, tamaño:', pdfBase64.length, 'caracteres');
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -871,7 +952,9 @@ app.post('/cotizaciones', async (req, res) => {
         message: 'Email inválido'
       });
     }
+    console.log('✅ [VALIDACIÓN] Email válido:', email);
 
+    console.log('\n🔢 [NUMERACIÓN] Generando número de cotización...');
     let numeroCotizacion = req.body.numeroCotizacion;
 
     if (!numeroCotizacion) {
@@ -911,6 +994,7 @@ app.post('/cotizaciones', async (req, res) => {
     console.log('✅ Cotización guardada en BD:', numeroCotizacion);
 
     // =================== ENVÍO DE CORREO ===================
+    console.log('\n📧 [EMAIL] Iniciando proceso de envío...');
     let emailEnviado = false;
     let errorEmail = null;
 
@@ -921,6 +1005,57 @@ app.post('/cotizaciones', async (req, res) => {
       const emailEmpresa = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
 
       console.log(`📧 Enviando a: ${emailCliente} y ${emailEmpresa}`);
+      console.log('📧 [EMAIL] Configuración de envío:');
+      console.log('   - Email cliente:', emailCliente);
+      console.log('   - Email empresa:', emailEmpresa);
+      console.log('   - SendGrid API Key existe:', !!process.env.SENDGRID_API_KEY);
+      console.log('   - SendGrid API Key length:', process.env.SENDGRID_API_KEY?.length || 0);
+      console.log('   - EMAIL_FROM:', process.env.EMAIL_FROM || 'No configurado');
+
+      if (!process.env.SENDGRID_API_KEY) {
+        throw new Error('SENDGRID_API_KEY no está configurada en las variables de entorno');
+      }
+
+
+      console.log('📧 [EMAIL] Preparando contenido HTML...');
+      const htmlContent = `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
+          <h2 style="color: #007bff; text-align: center;">Cotización ${numeroCotizacion}</h2>
+          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
+            <p style="margin: 5px 0;"><strong>Cliente:</strong> ${nombre}</p>
+            <p style="margin: 5px 0;"><strong>DNI/RUC:</strong> ${dniRuc}</p>
+            <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
+            <p style="margin: 5px 0;"><strong>Teléfono:</strong> ${telefonoMovil}</p>
+            <p style="margin: 5px 0;"><strong>Forma de contacto preferida:</strong> ${contacto}</p>
+            ${req.body.mensaje ? `<p style="margin: 5px 0;"><strong>Mensaje:</strong> ${req.body.mensaje}</p>` : ''}
+          </div>
+          <h3>Productos solicitados:</h3>
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+            <thead>
+              <tr style="background: #007bff; color: white;">
+                <th style="padding: 10px; border: 1px solid #ddd;">Categoría</th>
+                <th style="padding: 10px; border: 1px solid #ddd;">Equipo</th>
+                <th style="padding: 10px; border: 1px solid #ddd;">Cantidad</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${productos.map((p, i) => `
+                <tr style="background: ${i % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
+                  <td style="padding: 10px; border: 1px solid #ddd;">${p.categoria}</td>
+                  <td style="padding: 10px; border: 1px solid #ddd;">${p.equipo}</td>
+                  <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${p.cantidad}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+          <p style="background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; color: #856404;">
+            📎 <strong>Adjunto:</strong> La cotización completa está en el archivo PDF adjunto.
+          </p>
+        </div>
+      `;
+
+      console.log('📧 [EMAIL] Llamando a enviarCorreoSendGrid...');
+
 
 await enviarCorreoSendGrid({
   to: [emailCliente, emailEmpresa],
@@ -977,32 +1112,56 @@ await enviarCorreoSendGrid({
     disposition: 'attachment'
   }]
 });
-
-console.log('✅ Correo enviado exitosamente con SendGrid');
-
-
+console.log('✅ [EMAIL] Correo enviado exitosamente');
       emailEnviado = true;
 
+
+
+
+     
+
     } catch (emailError) {
-      console.error('⚠️ Error al enviar correo:', emailError.message);
+      console.error('\n❌ [EMAIL ERROR] Error al enviar correo:');
+      console.error('   - Tipo de error:', emailError.constructor.name);
+      console.error('   - Mensaje:', emailError.message);
+      console.error('   - Stack:', emailError.stack);
+      
+      if (emailError.response) {
+        console.error('   - Response status:', emailError.response.status);
+        console.error('   - Response body:', JSON.stringify(emailError.response.body, null, 2));
+      }
+      
       errorEmail = emailError.message;
     }
 
-    res.status(201).json({ 
+
+
+    console.log('\n✅ [RESPUESTA] Enviando respuesta al cliente...');
+    const respuesta = { 
       success: true,
       message: `Cotización ${numeroCotizacion} guardada correctamente`,
       numeroCotizacion: numeroCotizacion,
+      emailEnviado: emailEnviado,
+      errorEmail: errorEmail,
       data: {
         id: nuevaCotizacion._id,
         numeroCotizacion: numeroCotizacion,
         fecha: nuevaCotizacion.fecha,
         estado: nuevaCotizacion.estado
       }
-    });
+    };
+
+    console.log('📤 [RESPUESTA]:', JSON.stringify(respuesta, null, 2));
+    console.log('===========================================\n');
+
+    res.status(201).json(respuesta);
 
   } catch (error) {
-    console.error('❌ Error completo:', error);
-    console.error('❌ Stack:', error.stack);
+    console.error('\n❌❌❌ [ERROR CRÍTICO] ❌❌❌');
+    console.error('Tipo:', error.constructor.name);
+    console.error('Mensaje:', error.message);
+    console.error('Stack completo:', error.stack);
+    console.error('===========================================\n');
     
     res.status(500).json({
       success: false,
@@ -1012,6 +1171,17 @@ console.log('✅ Correo enviado exitosamente con SendGrid');
     });
   }
 });
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -1163,6 +1333,19 @@ app.post('/send-email', async (req, res) => {
     });
   }
 });
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 // ===================  contar COTIZACION  ===================
 
@@ -1460,6 +1643,10 @@ app.put('/cotizaciones/:id', async (req, res) => {
     res.status(500).json({ success: false, message: 'Error al actualizar el estado' });
   }
 });
+
+
+
+
 
 
 
