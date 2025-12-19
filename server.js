@@ -130,7 +130,7 @@ app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static('uploads'));
 
-// Middleware personalizado
+// Middleware personaliFzado
 app.use((req, res, next) => {
   if (req.headers['content-type'] === 'text/plain' && req.body && typeof req.body === 'string') {
     try {
@@ -265,6 +265,11 @@ app.get('/', (req, res) => {
     message: '✅ API DINSAC corriendo correctamente en Render',
     environment: process.env.NODE_ENV || 'production'
   });
+});
+
+
+app.get('/health', (req, res) => {
+  res.send('OK');
 });
 
 // =================== RUTAS DE USUARIOS ===================
