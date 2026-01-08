@@ -263,6 +263,11 @@ app.post('/api/consultas', async (req, res) => {
 
 
 
+
+
+
+
+
 const ordenSchema = new mongoose.Schema({
   nombre: String,
   email: String,
@@ -2222,6 +2227,42 @@ app.delete('/banner', async (req, res) => {
 });
 
  
+
+
+
+// =================== GEMINI API ===================
+app.post('/api/gemini', async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message) {
+      return res.status(400).json({ error: 'Mensaje requerido' });
+    }
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          contents: [
+            { parts: [{ text: message }] }
+          ]
+        })
+      }
+    );
+
+    const data = await response.json();
+    res.json(data);
+
+  } catch (error) {
+    console.error('❌ Error Gemini backend:', error);
+    res.status(500).json({ error: 'Error al comunicarse con Gemini' });
+  }
+});
+
 
 // =================== FIN PRODUCTOS ===================
 
