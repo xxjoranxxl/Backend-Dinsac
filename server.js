@@ -2231,16 +2231,28 @@ app.delete('/banner', async (req, res) => {
 
 
 // =================== GEMINI API ===================
+// =================== GEMINI API ===================
 app.post('/api/gemini', async (req, res) => {
   try {
     const { message } = req.body;
 
+    // Validar que llegue el mensaje
     if (!message) {
+      console.log('❌ No se recibió mensaje');
       return res.status(400).json({ error: 'Mensaje requerido' });
     }
 
+    console.log('📤 Enviando a Gemini:', message);
+
+    // Verificar que existe la API Key
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('❌ GEMINI_API_KEY no está configurada en variables de entorno');
+      return res.status(500).json({ error: 'API Key no configurada' });
+    }
+
+    // Llamar a la API de Gemini
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${process.env.GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: {
@@ -2248,18 +2260,41 @@ app.post('/api/gemini', async (req, res) => {
         },
         body: JSON.stringify({
           contents: [
-            { parts: [{ text: message }] }
-          ]
+            {
+              role: 'user',
+              parts: [{ text: message }]
+            }
+          ],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 1000
+          }
         })
       }
     );
 
     const data = await response.json();
+
+    // Verificar si la respuesta tiene errores
+    if (!response.ok) {
+      console.error('❌ Error de Gemini API:', data);
+      return res.status(response.status).json({
+        error: data.error?.message || 'Error de Gemini',
+        details: data
+      });
+    }
+
+    console.log('✅ Respuesta recibida de Gemini');
+
+    // Enviar respuesta al frontend
     res.json(data);
 
   } catch (error) {
-    console.error('❌ Error Gemini backend:', error);
-    res.status(500).json({ error: 'Error al comunicarse con Gemini' });
+    console.error('❌ Error en /api/gemini:', error.message);
+    res.status(500).json({
+      error: 'Error al comunicarse con Gemini',
+      details: error.message
+    });
   }
 });
 
