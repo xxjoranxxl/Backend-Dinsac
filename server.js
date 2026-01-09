@@ -10,7 +10,7 @@ const PDFDocument = require('pdfkit');
 const sgMail = require('@sendgrid/mail');
 require('dotenv').config(); // ✅ UNA SOLA VEZ
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-
+app.use(express.json());
 const app = express();
 //const PORT = 3000;
 const PORT = process.env.PORT || 3000;
@@ -2248,20 +2248,30 @@ app.post('/api/gemini', async (req, res) => {
         },
         body: JSON.stringify({
           contents: [
-            { parts: [{ text: message }] }
+            {
+              role: 'user',
+              parts: [{ text: message }]
+            }
           ]
         })
       }
     );
 
     const data = await response.json();
+
+    if (!response.ok) {
+      console.error('❌ Error Gemini:', data);
+      return res.status(500).json({ error: 'Error Gemini', details: data });
+    }
+
     res.json(data);
 
   } catch (error) {
-    console.error('❌ Error Gemini backend:', error);
+    console.error('❌ Error backend Gemini:', error);
     res.status(500).json({ error: 'Error al comunicarse con Gemini' });
   }
 });
+
 
 
 // =================== FIN PRODUCTOS ===================
