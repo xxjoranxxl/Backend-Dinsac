@@ -8,9 +8,10 @@ const fs = require('fs');
 const multer = require('multer');
 const PDFDocument = require('pdfkit');
 const sgMail = require('@sendgrid/mail');
+
+
 require('dotenv').config(); // ✅ UNA SOLA VEZ
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-app.use(express.json());
 const app = express();
 //const PORT = 3000;
 const PORT = process.env.PORT || 3000;
