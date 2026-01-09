@@ -9,112 +9,13 @@ const multer = require('multer');
 const PDFDocument = require('pdfkit');
 const sgMail = require('@sendgrid/mail');
 
-
 require('dotenv').config(); // ✅ UNA SOLA VEZ
 sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+
 const app = express();
-//const PORT = 3000;
 const PORT = process.env.PORT || 3000;
 
-
-
-
-
-// Crear servidor HTTP
-const server = http.createServer(app);
-
-// Carpeta uploads
-const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-  fs.mkdirSync(uploadsDir);
-}
-
-// =================== CONFIGURACIÓN DE NODEMAILER (UNA SOLA VEZ - GLOBAL) ===================
-// =================== CONFIGURACIÓN DE SENDGRID ===================
-console.log('🔧 Configurando SendGrid...');
-console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
-console.log('📧 FROM_EMAIL:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
-console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO');
-
-
-
-// Función helper para enviar correos con SendGrid
-async function enviarCorreoSendGrid({ to, subject, html, attachments }) {
-  console.log('\n🔧 [SENDGRID] Iniciando función enviarCorreoSendGrid...');
-  console.log('   - Destinatarios:', to);
-  console.log('   - Asunto:', subject);
-  console.log('   - Tiene HTML:', !!html);
-  console.log('   - Adjuntos:', attachments?.length || 0);
-  
-  try {
-    console.log('🔧 [SENDGRID] Verificando configuración...');
-    
-    if (!process.env.SENDGRID_API_KEY) {
-      throw new Error('SENDGRID_API_KEY no está configurada');
-    }
-    
-    console.log('🔧 [SENDGRID] Configurando sgMail...');
-    sgMail.setApiKey(process.env.SENDGRID_API_KEY);
-    
-    console.log('🔧 [SENDGRID] Preparando mensaje...');
-    const msg = {
-      to: to,
-      from: {
-        email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
-        name: 'Distribuidora Industrial S.A.C.'
-      },
-      subject: subject,
-      html: html,
-      attachments: attachments || []
-    };
-    
-    console.log('🔧 [SENDGRID] Mensaje preparado:', JSON.stringify({
-      ...msg,
-      html: '[HTML CONTENT]',
-      attachments: msg.attachments.map(a => ({ ...a, content: '[BASE64 DATA]' }))
-    }, null, 2));
-    
-    console.log('🔧 [SENDGRID] Enviando mensaje...');
-    const result = await sgMail.send(msg);
-    
-    console.log('✅ [SENDGRID] Mensaje enviado exitosamente');
-    console.log('   - Status Code:', result[0]?.statusCode);
-    console.log('   - Response:', JSON.stringify(result[0]?.headers, null, 2));
-    
-    return result;
-    
-  } catch (error) {
-    console.error('\n❌ [SENDGRID ERROR] Error en enviarCorreoSendGrid:');
-    console.error('   - Tipo:', error.constructor.name);
-    console.error('   - Mensaje:', error.message);
-    console.error('   - Código:', error.code);
-    
-    if (error.response) {
-      console.error('   - Response Status:', error.response.status);
-      console.error('   - Response Headers:', JSON.stringify(error.response.headers, null, 2));
-      console.error('   - Response Body:', JSON.stringify(error.response.body, null, 2));
-    }
-    
-    console.error('   - Stack:', error.stack);
-    throw error;
-  }
-}
-
-// 🔥 INICIALIZAR SOCKET.IO
-const io = new Server(server, {
-  cors: {
-    origin: [
-      '*',
-      'https://dinsac-admin.onrender.com',
-      'http://localhost:4200',
-      'http://127.0.0.1:5500/index.html'
-      
-    ],
-    methods: ['GET', 'POST', 'PUT', 'DELETE']
-  }
-});
-
-// Middleware CORS
+/* ===================== MIDDLEWARES ===================== */
 app.use(cors({
   origin: [
     'http://localhost:4200',
@@ -131,30 +32,77 @@ app.use(cors({
 }));
 
 app.options('*', cors());
-  
+
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static('uploads'));
 
-// Middleware personaliFzado
+/* ===================== CARPETA UPLOADS ===================== */
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
+
+/* ===================== SERVER HTTP ===================== */
+const server = http.createServer(app);
+
+/* ===================== SOCKET.IO ===================== */
+const io = new Server(server, {
+  cors: {
+    origin: [
+      '*',
+      'https://dinsac-admin.onrender.com',
+      'http://localhost:4200',
+      'http://127.0.0.1:5500/index.html'
+    ],
+    methods: ['GET', 'POST', 'PUT', 'DELETE']
+  }
+});
+
+/* ===================== SENDGRID ===================== */
+console.log('🔧 Configurando SendGrid...');
+console.log('🔑 SENDGRID_API_KEY:', process.env.SENDGRID_API_KEY ? '✅ Configurado' : '❌ NO CONFIGURADO');
+console.log('📧 FROM_EMAIL:', process.env.EMAIL_FROM || '❌ NO CONFIGURADO');
+console.log('🏢 EMAIL_OWNER:', process.env.EMAIL_OWNER || '❌ NO CONFIGURADO');
+
+async function enviarCorreoSendGrid({ to, subject, html, attachments }) {
+  try {
+    const msg = {
+      to,
+      from: {
+        email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
+        name: 'Distribuidora Industrial S.A.C.'
+      },
+      subject,
+      html,
+      attachments: attachments || []
+    };
+
+    return await sgMail.send(msg);
+  } catch (error) {
+    console.error('❌ Error SendGrid:', error);
+    throw error;
+  }
+}
+
+/* ===================== MIDDLEWARE EXTRA ===================== */
 app.use((req, res, next) => {
-  if (req.headers['content-type'] === 'text/plain' && req.body && typeof req.body === 'string') {
+  if (req.headers['content-type'] === 'text/plain' && typeof req.body === 'string') {
     try {
       req.body = JSON.parse(req.body);
     } catch (e) {
-      console.error('Failed to parse text/plain as JSON:', e);
+      console.error('❌ Error parseando body:', e);
     }
   }
   next();
 });
 
-// MongoDB Connection
-const dbURI = process.env.MONGODB_URI;
-mongoose.connect(dbURI, {})
+/* ===================== MONGODB ===================== */
+mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('✅ MongoDB Atlas connected'))
-  .catch(err => console.error('❌ MongoDB Atlas connection error:', err));
+  .catch(err => console.error('❌ MongoDB error:', err));
 
-// =================== SCHEMAS ===================
+/* ===================== SCHEMAS ===================== */
 const userSchema = new mongoose.Schema({
   username: { type: String, required: true, unique: true },
   password: { type: String, required: true },
@@ -166,47 +114,36 @@ const userClienteSchema = new mongoose.Schema({
   password: { type: String, required: true },
   nombre: { type: String, required: true },
   email: { type: String, required: true, unique: true },
-  telefono: { type: String },
-  direccion: { type: String },
+  telefono: String,
+  direccion: String,
   favorites: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Product' }]
 });
 const UserCliente = mongoose.model('UserCliente', userClienteSchema);
 
 const productSchema = new mongoose.Schema({
-  codigo: { 
-    type: String, 
-    required: true,
-    trim: true,        // ✅ Elimina espacios en blanco
-    uppercase: true    // ✅ Convierte automáticamente a mayúsculas
-  },
+  codigo: { type: String, required: true, trim: true, uppercase: true },
   name: { type: String, required: true },
   description: { type: String, required: true },
-  image: { type: String, required: false },
-  image1: { type: String, required: false },
-  image2: { type: String, required: false },
-  image3: { type: String, required: false },
+  image: String,
+  image1: String,
+  image2: String,
+  image3: String,
   stock: { type: Number, required: true },
-  price: {  type: Number,  required: true,  min: 0},
-  precioReal: {    type: Number,     default: null   },
+  price: { type: Number, required: true, min: 0 },
+  precioReal: { type: Number, default: null },
   category: { type: String, required: true },
-  estado: {
-    type: String,
-    enum: ['Normal', 'Oferta'],
-    required: true
-  },
-  videoURL: { type: String, required: false },
-  featuresText: { type: String, required: false },
-  tagsText: { type: String, required: false },
-  destacado: { type: Boolean, default: false  }
-}, { 
-  timestamps: true // Agrega createdAt y updatedAt automáticamente
-});
+  estado: { type: String, enum: ['Normal', 'Oferta'], required: true },
+  videoURL: String,
+  featuresText: String,
+  tagsText: String,
+  destacado: { type: Boolean, default: false }
+}, { timestamps: true });
 
 const Product = mongoose.model('Product', productSchema);
 
 const cotizacionSchema = new mongoose.Schema({
   numeroCotizacion: { type: String, required: true, unique: true },
-  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserCliente', required: false },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'UserCliente' },
   nombre: String,
   dniRuc: String,
   email: String,
@@ -221,17 +158,11 @@ const cotizacionSchema = new mongoose.Schema({
   }],
   pdfBase64: String,
   fecha: { type: Date, default: Date.now },
-  estado: { type: String, default: 'pendiente' },
-  createdAt: { type: Date, default: Date.now },
-  updatedAt: { type: Date, default: Date.now }
+  estado: { type: String, default: 'pendiente' }
 });
 const Cotizacion = mongoose.model('Cotizacion', cotizacionSchema);
 
-
-
-// =================== NUEVA API ===================
-
-// Crear consulta / mensaje
+/* ===================== API CONSULTAS ===================== */
 app.post('/api/consultas', async (req, res) => {
   try {
     const { nombre, email, mensaje } = req.body;
@@ -240,7 +171,6 @@ app.post('/api/consultas', async (req, res) => {
       return res.status(400).json({ message: 'Datos incompletos' });
     }
 
-    // (opcional) enviar correo
     await enviarCorreoSendGrid({
       to: process.env.EMAIL_OWNER,
       subject: '📩 Nueva consulta recibida',
@@ -252,16 +182,12 @@ app.post('/api/consultas', async (req, res) => {
       `
     });
 
-    res.status(201).json({
-      message: 'Consulta enviada correctamente'
-    });
-
+    res.status(201).json({ message: 'Consulta enviada correctamente' });
   } catch (error) {
     console.error('❌ Error en /api/consultas:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
-
 
 
 
