@@ -2166,47 +2166,6 @@ app.delete('/banner', async (req, res) => {
 
 
 
-// =================== GEMINI API ===================
-app.post('/api/gemini', async (req, res) => {
-  try {
-    const { message } = req.body;
-
-    if (!message) {
-      return res.status(400).json({ error: 'Mensaje requerido' });
-    }
-
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          contents: [
-            {
-              role: 'user',
-              parts: [{ text: message }]
-            }
-          ]
-        })
-      }
-    );
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      console.error('❌ Error Gemini:', data);
-      return res.status(500).json({ error: 'Error Gemini', details: data });
-    }
-
-    res.json(data);
-
-  } catch (error) {
-    console.error('❌ Error backend Gemini:', error);
-    res.status(500).json({ error: 'Error al comunicarse con Gemini' });
-  }
-});
 
 
 
@@ -2214,26 +2173,59 @@ app.post('/api/gemini', async (req, res) => {
 
 // =================== GROQ ===================
 
+// =================== GROQ ===================
 app.post("/chat", async (req, res) => {
   try {
+    console.log("📩 Mensaje recibido:", req.body);
+    
     const userMessage = req.body.message;
+
+    if (!userMessage) {
+      return res.status(400).json({ error: "No se recibió ningún mensaje" });
+    }
+
+    if (!process.env.GROQ_API_KEY) {
+      console.error("❌ GROQ_API_KEY no configurada");
+      return res.status(500).json({ error: "API key no configurada en el servidor" });
+    }
 
     const completion = await groq.chat.completions.create({
       model: "llama3-8b-8192",
       messages: [
-        { role: "system", content: "Eres un asistente amable para una página web." },
+        { 
+          role: "system", 
+          content: "Eres un asistente experto de Distribuidora Industrial S.A.C. Ayudas a los clientes con información sobre productos industriales, cotizaciones y pedidos. Sé amable y profesional."
+        },
         { role: "user", content: userMessage }
-      ]
+      ],
+      temperature: 0.7,
+      max_tokens: 1024
     });
 
-    res.json({
-      reply: completion.choices[0].message.content
-    });
+    const reply = completion.choices[0]?.message?.content;
+
+    if (!reply) {
+      throw new Error("No se recibió respuesta de la IA");
+    }
+
+    res.json({ reply });
 
   } catch (error) {
-    res.status(500).json({ error: "Error con la IA" });
+    console.error("❌ Error en /chat:", error.message);
+    res.status(500).json({ 
+      error: "Error al procesar tu mensaje",
+      details: error.message 
+    });
   }
 });
+
+app.get("/chat/status", (req, res) => {
+  res.json({
+    groqConfigured: !!process.env.GROQ_API_KEY,
+    apiKeyLength: process.env.GROQ_API_KEY?.length || 0
+  });
+});
+
 
 
 // =================== FIN PRODUCTOS ===================
