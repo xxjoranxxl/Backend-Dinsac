@@ -2172,9 +2172,7 @@ app.delete('/banner', async (req, res) => {
 
 
 // =================== GROQ ===================
-
-// =================== GROQ ===================
-app.post("/chat", async (req, res) => {
+app.post("/chatia", async (req, res) => {
   try {
     console.log("📩 Mensaje recibido:", req.body);
     
@@ -2186,7 +2184,7 @@ app.post("/chat", async (req, res) => {
 
     if (!process.env.GROQ_API_KEY) {
       console.error("❌ GROQ_API_KEY no configurada");
-      return res.status(500).json({ error: "API key no configurada en el servidor" });
+      return res.status(500).json({ error: "API key no configurada" });
     }
 
     const completion = await groq.chat.completions.create({
@@ -2211,7 +2209,7 @@ app.post("/chat", async (req, res) => {
     res.json({ reply });
 
   } catch (error) {
-    console.error("❌ Error en /chat:", error.message);
+    console.error("❌ Error en /chatia:", error.message);
     res.status(500).json({ 
       error: "Error al procesar tu mensaje",
       details: error.message 
@@ -2219,7 +2217,7 @@ app.post("/chat", async (req, res) => {
   }
 });
 
-app.get("/chat/status", (req, res) => {
+app.get("/chatia/status", (req, res) => {
   res.json({
     groqConfigured: !!process.env.GROQ_API_KEY,
     apiKeyLength: process.env.GROQ_API_KEY?.length || 0
