@@ -14,6 +14,11 @@ sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const Groq = require("groq-sdk");
+
+const groq = new Groq({
+  apiKey: process.env.GROQ_API_KEY
+});
 
 /* ===================== MIDDLEWARES ===================== */
 app.use(cors({
@@ -36,6 +41,10 @@ app.options('*', cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use('/uploads', express.static('uploads'));
+
+
+
+
 
 /* ===================== CARPETA UPLOADS ===================== */
 const uploadsDir = path.join(__dirname, 'uploads');
@@ -2199,6 +2208,32 @@ app.post('/api/gemini', async (req, res) => {
   }
 });
 
+
+
+
+
+// =================== GROQ ===================
+
+app.post("/chat", async (req, res) => {
+  try {
+    const userMessage = req.body.message;
+
+    const completion = await groq.chat.completions.create({
+      model: "llama3-8b-8192",
+      messages: [
+        { role: "system", content: "Eres un asistente amable para una página web." },
+        { role: "user", content: userMessage }
+      ]
+    });
+
+    res.json({
+      reply: completion.choices[0].message.content
+    });
+
+  } catch (error) {
+    res.status(500).json({ error: "Error con la IA" });
+  }
+});
 
 
 // =================== FIN PRODUCTOS ===================
