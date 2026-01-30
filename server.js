@@ -40,9 +40,13 @@ app.options('*', cors());
 
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+
+app.use('/uploads', (req, res, next) => {
+  res.setHeader('Cache-Control', 'public, max-age=31536000');
+  next();
+});
 app.use('/uploads', express.static('uploads'));
-
-
 
 
 
@@ -462,7 +466,8 @@ app.get('/products', async (req, res) => {
     const query = {};
     if (category) query.category = category;
     if (estado) query.estado = estado;
-    const products = await Product.find(query);
+const products = await Product.find(query)
+  .select('name price precioReal estado category image image1 destacado');
     res.json(products);
   } catch (err) {
     res.status(500).json({ message: 'Error fetching products', error: err });
