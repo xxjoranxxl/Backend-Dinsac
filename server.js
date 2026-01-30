@@ -1798,6 +1798,9 @@ app.post('/upload-chat', upload.single('archivo'), (req, res) => {
   });
 });
 
+
+
+
 // =================== SOCKET.IO ===================
 io.on('connection', (socket) => {
   console.log("🔵 Usuario conectado:", socket.id);
@@ -1919,7 +1922,7 @@ app.delete('/favorites/:userId/:productId', async (req, res) => {
 
 const bannerSchema = new mongoose.Schema({
   _id: { type: String, required: true },
-  image: { type: Buffer, required: true },
+  imagePath: { type: String, required: true }, // 👈 NUEVO
   contentType: { type: String, required: true },
   createdAt: { type: Date, default: Date.now }
 });
@@ -2005,13 +2008,19 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {
       bannerId = `carrusel_${ordenNum}`;
     }
 
+    const fileName = `${bannerId}.${req.file.mimetype.split('/')[1]}`;
+const filePath = path.join(uploadsDir, fileName);
+
+// Guardar archivo
+fs.writeFileSync(filePath, req.file.buffer);
+
     // Guardar o actualizar el banner en MongoDB
     const bannerGuardado = await Banner.findOneAndUpdate(
       { _id: bannerId },
       { 
-        image: req.file.buffer,
-        contentType: req.file.mimetype,
-        createdAt: new Date()
+        imagePath: `/uploads/${fileName}`,
+    contentType: req.file.mimetype,
+    createdAt: new Date()
       },
       { 
         upsert: true, 
@@ -2075,7 +2084,7 @@ app.get('/banner', async (req, res) => {
       const imagenes = banners.map(b => ({
         id: b._id,
         orden: parseInt(b._id.split('_')[1]),
-        image: `data:${b.contentType};base64,${b.image.toString('base64')}`,
+image: `${req.protocol}://${req.get('host')}${b.imagePath}`,
         contentType: b.contentType
       }));
 
@@ -2090,22 +2099,20 @@ app.get('/banner', async (req, res) => {
     // CASO 2: Solicitud de BANNER INDIVIDUAL (principal o ofertasHome)
     const banner = await Banner.findOne({ _id: tipo });
 
-    if (!banner || !banner.image) {
+if (!banner || !banner.imagePath) {
       return res.status(404).json({ 
         success: false,
         mensaje: `No hay banner del tipo '${tipo}'` 
       });
     }
 
-    const base64 = `data:${banner.contentType};base64,${banner.image.toString('base64')}`;
+res.status(200).json({
+  success: true,
+  image: `${req.protocol}://${req.get('host')}${banner.imagePath}`
+});
     
     console.log(`✅ Banner '${tipo}' encontrado`);
 
-    res.status(200).json({ 
-      success: true,
-      image: base64,
-      contentType: banner.contentType
-    });
 
   } catch (error) {
     console.error('❌ Error en GET /banner:', error);
