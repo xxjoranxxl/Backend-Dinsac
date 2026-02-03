@@ -20,6 +20,11 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
+
+
+const cloudinary = require('./config/cloudinary');
+
+
 /* ===================== MIDDLEWARES ===================== */
 app.use(cors({
   origin: [
@@ -133,6 +138,9 @@ const userClienteSchema = new mongoose.Schema({
 });
 const UserCliente = mongoose.model('UserCliente', userClienteSchema);
 
+
+
+
 const productSchema = new mongoose.Schema({
   codigo: { type: String, required: true, trim: true, uppercase: true },
   name: { type: String, required: true },
@@ -153,6 +161,9 @@ const productSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 const Product = mongoose.model('Product', productSchema);
+
+
+
 
 const cotizacionSchema = new mongoose.Schema({
   numeroCotizacion: { type: String, required: true, unique: true },
@@ -1956,32 +1967,31 @@ const uploadBanner = multer({
 app.post('/banner', uploadBanner.single('image'), async (req, res) => {
   try {
     const { tipo, orden } = req.body;
-    
-    // Log para debugging
+
+    // 📥 LOG DE DEBUG
     console.log('📥 Recibido:', { 
-      tipo, 
-      orden, 
+      tipo,
+      orden,
       hasFile: !!req.file,
       fileSize: req.file ? req.file.size : 0,
       mimetype: req.file ? req.file.mimetype : null
     });
-    
-    // Validaciones
+
+    // ================= VALIDACIONES =================
     if (!req.file) {
-      return res.status(400).json({ 
+      return res.status(400).json({
         success: false,
-        mensaje: "No se envió ninguna imagen" 
-      });
-    }
-    
-    if (!tipo) {
-      return res.status(400).json({ 
-        success: false,
-        mensaje: "Debes indicar el tipo de banner (principal, ofertasHome, carrusel)" 
+        mensaje: 'No se envió ninguna imagen'
       });
     }
 
-    // Validar tipos permitidos
+    if (!tipo) {
+      return res.status(400).json({
+        success: false,
+        mensaje: 'Debes indicar el tipo de banner (principal, ofertasHome, carrusel)'
+      });
+    }
+
     const tiposPermitidos = ['principal', 'ofertasHome', 'carrusel'];
     if (!tiposPermitidos.includes(tipo)) {
       return res.status(400).json({
@@ -1990,9 +2000,9 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {
       });
     }
 
-    // Determinar el ID del banner
+    // ================= ID DEL BANNER =================
     let bannerId = tipo;
-    
+
     if (tipo === 'carrusel') {
       if (orden === undefined || orden === null) {
         return res.status(400).json({
@@ -2000,63 +2010,68 @@ app.post('/banner', uploadBanner.single('image'), async (req, res) => {
           mensaje: "Para carrusel debes enviar el campo 'orden' (0, 1 o 2)"
         });
       }
-      
-      // Validar que orden sea 0, 1 o 2
+
       const ordenNum = parseInt(orden);
       if (![0, 1, 2].includes(ordenNum)) {
         return res.status(400).json({
           success: false,
-          mensaje: "El orden debe ser 0, 1 o 2"
+          mensaje: 'El orden debe ser 0, 1 o 2'
         });
       }
-      
+
       bannerId = `carrusel_${ordenNum}`;
     }
 
-    const fileName = `${bannerId}.${req.file.mimetype.split('/')[1]}`;
-const filePath = path.join(uploadsDir, fileName);
-
-// Guardar archivo
-fs.writeFileSync(filePath, req.file.buffer);
-
-    // Guardar o actualizar el banner en MongoDB
-    const bannerGuardado = await Banner.findOneAndUpdate(
-      { _id: bannerId },
-      { 
-        imagePath: `/uploads/${fileName}`,
-    contentType: req.file.mimetype,
-    createdAt: new Date()
-      },
-      { 
-        upsert: true, 
-        new: true 
+    // ================= ☁️ SUBIR A CLOUDINARY =================
+    const result = await cloudinary.uploader.upload(
+      `data:${req.file.mimetype};base64,${req.file.buffer.toString('base64')}`,
+      {
+        folder: `banners/${tipo}`,
+        public_id: bannerId,
+        overwrite: true,
+        resource_type: 'image'
       }
     );
 
-    console.log('✅ Banner guardado exitosamente:', bannerId);
-    
-    res.status(200).json({ 
+    const imageUrl = result.secure_url; // ✅ YA EXISTE
+
+    // ================= 🗄️ GUARDAR EN MONGODB =================
+    const bannerGuardado = await Banner.findOneAndUpdate(
+      { _id: bannerId },
+      {
+        imagePath: imageUrl,      // ✅ URL DE CLOUDINARY
+        contentType: req.file.mimetype,
+        createdAt: new Date()
+      },
+      {
+        upsert: true,
+        new: true
+      }
+    );
+
+    console.log('✅ Banner guardado:', bannerId);
+
+    res.status(200).json({
       success: true,
-      mensaje: `Banner guardado correctamente`,
+      mensaje: 'Banner guardado correctamente',
       data: {
         id: bannerId,
-        tipo: tipo,
+        tipo,
         orden: tipo === 'carrusel' ? orden : null,
-        size: req.file.size,
-        contentType: req.file.mimetype
+        imageUrl
       }
     });
 
   } catch (error) {
     console.error('❌ Error en POST /banner:', error);
-    
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      mensaje: "Error interno del servidor",
-      error: error.message 
+      mensaje: 'Error interno del servidor',
+      error: error.message
     });
   }
 });
+
 
 // =================== ENDPOINT: OBTENER BANNER (GET) ===================
 app.get('/banner', async (req, res) => {
@@ -2089,9 +2104,10 @@ app.get('/banner', async (req, res) => {
       const imagenes = banners.map(b => ({
         id: b._id,
         orden: parseInt(b._id.split('_')[1]),
-image: `${req.protocol}://${req.get('host')}${b.imagePath}`,
+        image: b.imagePath, // ✅ AQUÍ
         contentType: b.contentType
       }));
+
 
       console.log(`✅ Devolviendo ${imagenes.length} imágenes del carrusel`);
 
@@ -2104,17 +2120,18 @@ image: `${req.protocol}://${req.get('host')}${b.imagePath}`,
     // CASO 2: Solicitud de BANNER INDIVIDUAL (principal o ofertasHome)
     const banner = await Banner.findOne({ _id: tipo });
 
-if (!banner || !banner.imagePath) {
-      return res.status(404).json({ 
-        success: false,
-        mensaje: `No hay banner del tipo '${tipo}'` 
-      });
-    }
+    if (!banner || !banner.imagePath) {
+          return res.status(404).json({ 
+            success: false,
+            mensaje: `No hay banner del tipo '${tipo}'` 
+          });
+        }
 
-res.status(200).json({
-  success: true,
-  image: `${req.protocol}://${req.get('host')}${banner.imagePath}`
-});
+    res.status(200).json({
+      success: true,
+      image: banner.imagePath
+    });
+
     
     console.log(`✅ Banner '${tipo}' encontrado`);
 
