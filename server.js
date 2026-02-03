@@ -478,8 +478,39 @@ app.get('/products', async (req, res) => {
     if (category) query.category = category;
     if (estado) query.estado = estado;
 const products = await Product.find(query)
-  .select('name price precioReal estado category image image1 destacado');
-    res.json(products);
+  .select('name price precioReal estado category image image1 destacado')
+  .lean();
+
+// ✅ Optimizar URLs de imágenes
+const productsOptimized = products.map(p => {
+  let image = p.image;
+  let image1 = p.image1;
+  
+  // Optimizar image
+  if (image && image.includes('cloudinary.com')) {
+    const parts = image.split('/upload/');
+    if (parts.length === 2) {
+      image = `${parts[0]}/upload/w_400,q_auto:low,f_auto/${parts[1]}`;
+    }
+  }
+  
+  // Optimizar image1
+  if (image1 && image1.includes('cloudinary.com')) {
+    const parts = image1.split('/upload/');
+    if (parts.length === 2) {
+      image1 = `${parts[0]}/upload/w_400,q_auto:low,f_auto/${parts[1]}`;
+    }
+  }
+  
+  return { ...p, image, image1 };
+});
+
+res.set('Cache-Control', 'public, max-age=86400');
+
+res.json(productsOptimized);
+
+
+
   } catch (err) {
     res.status(500).json({ message: 'Error fetching products', error: err });
   }
@@ -2101,15 +2132,28 @@ app.get('/banner', async (req, res) => {
         });
       }
 
-      const imagenes = banners.map(b => ({
-        id: b._id,
-        orden: parseInt(b._id.split('_')[1]),
-        image: b.imagePath, // ✅ AQUÍ
-        contentType: b.contentType
-      }));
+const imagenes = banners.map(b => {
+  let optimizedUrl = b.imagePath;
+  
+  // ✅ Si es URL de Cloudinary, optimizar
+  if (optimizedUrl && optimizedUrl.includes('cloudinary.com')) {
+    const parts = optimizedUrl.split('/upload/');
+    if (parts.length === 2) {
+      optimizedUrl = `${parts[0]}/upload/w_1200,q_auto:good,f_auto/${parts[1]}`;
+    }
+  }
+  
+  return {
+    id: b._id,
+    orden: parseInt(b._id.split('_')[1]),
+    image: optimizedUrl,
+    contentType: b.contentType
+  };
+});
 
 
       console.log(`✅ Devolviendo ${imagenes.length} imágenes del carrusel`);
+res.set('Cache-Control', 'public, max-age=86400');
 
       return res.status(200).json({ 
         success: true,
