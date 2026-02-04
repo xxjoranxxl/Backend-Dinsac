@@ -786,6 +786,8 @@ app.delete('/products/:id', async (req, res) => {
 
 
 
+
+
 // =================== FAVORITOS ===================
 app.post('/favorites', async (req, res) => {
   try {
