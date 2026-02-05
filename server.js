@@ -939,6 +939,7 @@ app.get('/interacciones', async (req, res) => {
 
 
 // =================== COTIZACIONES ===================
+// =================== COTIZACIONES - VERSIÓN CORREGIDA ===================
 app.post('/cotizaciones', async (req, res) => {
   try {
     console.log('📧 Procesando cotización...');
@@ -988,21 +989,54 @@ app.post('/cotizaciones', async (req, res) => {
     }
     console.log('✅ [VALIDACIÓN] Email válido:', email);
 
-    console.log('\n🔢 [NUMERACIÓN] Generando número de cotización...');
-    let numeroCotizacion = req.body.numeroCotizacion;
+    // ✅✅✅ SOLUCIÓN: GENERAR NÚMERO DE COTIZACIÓN ÚNICO ✅✅✅
+    console.log('\n🔢 [NUMERACIÓN] Generando número de cotización ÚNICO...');
+    let numeroCotizacion;
+    let intentos = 0;
+    const maxIntentos = 10;
 
-    if (!numeroCotizacion) {
-      const total = await Cotizacion.countDocuments();
-      const numero = total + 1;
-      numeroCotizacion = `COT-${numero.toString().padStart(8, '0')}`;
+    while (intentos < maxIntentos) {
+      // Buscar la cotización con el número más alto
+      const ultimaCotizacion = await Cotizacion.findOne()
+        .sort({ numeroCotizacion: -1 })
+        .select('numeroCotizacion')
+        .lean();
+
+      let siguienteNumero = 1;
+
+      if (ultimaCotizacion && ultimaCotizacion.numeroCotizacion) {
+        // Extraer el número de la última cotización (formato: COT-00000123)
+        const match = ultimaCotizacion.numeroCotizacion.match(/COT-(\d+)/);
+        if (match) {
+          const numeroActual = parseInt(match[1], 10);
+          siguienteNumero = numeroActual + 1;
+          console.log(`📊 Última cotización: ${ultimaCotizacion.numeroCotizacion} (número: ${numeroActual})`);
+        }
+      }
+
+      numeroCotizacion = `COT-${siguienteNumero.toString().padStart(8, '0')}`;
+      console.log(`🎯 Número generado: ${numeroCotizacion}`);
+
+      // Verificar que NO exista (seguridad extra)
+      const yaExiste = await Cotizacion.findOne({ numeroCotizacion }).lean();
+      
+      if (!yaExiste) {
+        console.log(`✅ Número ${numeroCotizacion} está disponible`);
+        break; // Número único encontrado, salir del bucle
+      }
+
+      console.log(`⚠️ Número ${numeroCotizacion} ya existe, generando otro...`);
+      intentos++;
     }
 
-    const existente = await Cotizacion.findOne({ numeroCotizacion });
-    if (existente) {
-      const total = await Cotizacion.countDocuments();
-      const numero = total + 1;
-      numeroCotizacion = `COT-${numero.toString().padStart(8, '0')}`;
+    if (intentos >= maxIntentos) {
+      console.error('❌ [ERROR] No se pudo generar un número único después de varios intentos');
+      // Usar timestamp como fallback
+      numeroCotizacion = `COT-${Date.now().toString().slice(-8)}`;
+      console.log(`🆘 Usando número de emergencia: ${numeroCotizacion}`);
     }
+
+    console.log(`✅ Número de cotización FINAL: ${numeroCotizacion}`);
 
     const nuevaCotizacion = new Cotizacion({
       numeroCotizacion,
@@ -1050,51 +1084,12 @@ app.post('/cotizaciones', async (req, res) => {
         throw new Error('SENDGRID_API_KEY no está configurada en las variables de entorno');
       }
 
-
       console.log('📧 [EMAIL] Preparando contenido HTML...');
-      const htmlContent = `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
-          <h2 style="color: #007bff; text-align: center;">Cotización ${numeroCotizacion}</h2>
-          <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
-            <p style="margin: 5px 0;"><strong>Cliente:</strong> ${nombre}</p>
-            <p style="margin: 5px 0;"><strong>DNI/RUC:</strong> ${dniRuc}</p>
-            <p style="margin: 5px 0;"><strong>Email:</strong> ${email}</p>
-            <p style="margin: 5px 0;"><strong>Teléfono:</strong> ${telefonoMovil}</p>
-            <p style="margin: 5px 0;"><strong>Forma de contacto preferida:</strong> ${contacto}</p>
-            ${req.body.mensaje ? `<p style="margin: 5px 0;"><strong>Mensaje:</strong> ${req.body.mensaje}</p>` : ''}
-          </div>
-          <h3>Productos solicitados:</h3>
-          <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
-            <thead>
-              <tr style="background: #007bff; color: white;">
-                <th style="padding: 10px; border: 1px solid #ddd;">Categoría</th>
-                <th style="padding: 10px; border: 1px solid #ddd;">Equipo</th>
-                <th style="padding: 10px; border: 1px solid #ddd;">Cantidad</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${productos.map((p, i) => `
-                <tr style="background: ${i % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
-                  <td style="padding: 10px; border: 1px solid #ddd;">${p.categoria}</td>
-                  <td style="padding: 10px; border: 1px solid #ddd;">${p.equipo}</td>
-                  <td style="padding: 10px; border: 1px solid #ddd; text-align: center;">${p.cantidad}</td>
-                </tr>
-              `).join('')}
-            </tbody>
-          </table>
-          <p style="background: #fff3cd; padding: 15px; border-radius: 5px; border-left: 4px solid #ffc107; color: #856404;">
-            📎 <strong>Adjunto:</strong> La cotización completa está en el archivo PDF adjunto.
-          </p>
-        </div>
-      `;
 
-      console.log('📧 [EMAIL] Llamando a enviarCorreoSendGrid...');
-
-
-await enviarCorreoSendGrid({
-  to: [emailCliente, emailEmpresa],
-  subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
-  html: `
+      await enviarCorreoSendGrid({
+        to: [emailCliente, emailEmpresa],
+        subject: `Cotización ${numeroCotizacion} - Distribuidora Industrial S.A.C.`,
+        html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px;">
             <h2 style="color: #007bff; text-align: center;">Cotización ${numeroCotizacion}</h2>
             <div style="background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 20px 0;">
@@ -1140,19 +1135,15 @@ await enviarCorreoSendGrid({
           </div>
         `,
         attachments: [{
-    content: pdfBase64,  // ⚠️ NOTA: Ya no usa pdfBuffer, usa directamente pdfBase64
-    filename: `Cotizacion_${numeroCotizacion}.pdf`,
-    type: 'application/pdf',
-    disposition: 'attachment'
-  }]
-});
-console.log('✅ [EMAIL] Correo enviado exitosamente');
+          content: pdfBase64,
+          filename: `Cotizacion_${numeroCotizacion}.pdf`,
+          type: 'application/pdf',
+          disposition: 'attachment'
+        }]
+      });
+      
+      console.log('✅ [EMAIL] Correo enviado exitosamente');
       emailEnviado = true;
-
-
-
-
-     
 
     } catch (emailError) {
       console.error('\n❌ [EMAIL ERROR] Error al enviar correo:');
@@ -1167,8 +1158,6 @@ console.log('✅ [EMAIL] Correo enviado exitosamente');
       
       errorEmail = emailError.message;
     }
-
-
 
     console.log('\n✅ [RESPUESTA] Enviando respuesta al cliente...');
     const respuesta = { 
@@ -1206,18 +1195,39 @@ console.log('✅ [EMAIL] Correo enviado exitosamente');
   }
 });
 
+// ✅ ENDPOINT MEJORADO PARA OBTENER EL PRÓXIMO NÚMERO
+app.get('/cotizaciones/proximo-numero', async (req, res) => {
+  try {
+    const ultimaCotizacion = await Cotizacion.findOne()
+      .sort({ numeroCotizacion: -1 })
+      .select('numeroCotizacion')
+      .lean();
 
+    let siguienteNumero = 1;
 
+    if (ultimaCotizacion && ultimaCotizacion.numeroCotizacion) {
+      const match = ultimaCotizacion.numeroCotizacion.match(/COT-(\d+)/);
+      if (match) {
+        siguienteNumero = parseInt(match[1], 10) + 1;
+      }
+    }
 
+    const proximoNumero = `COT-${siguienteNumero.toString().padStart(8, '0')}`;
 
-
-
-
-
-
-
-
-
+    res.json({ 
+      success: true,
+      proximoNumero,
+      numeroActual: siguienteNumero
+    });
+  } catch (error) {
+    console.error('Error al obtener próximo número:', error);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error al generar número',
+      proximoNumero: `COT-${Date.now().toString().slice(-8)}`
+    });
+  }
+});
 
 // 🔹 Contar cotizaciones pendientes (usando Mongoose)
 app.get('/cotizaciones/pendientes/total', async (req, res) => {
@@ -1233,7 +1243,6 @@ app.get('/cotizaciones/pendientes/total', async (req, res) => {
   }
 });
 
-
 app.delete('/cotizaciones/:id', async (req, res) => {
   try {
     const id = req.params.id;
@@ -1245,8 +1254,7 @@ app.delete('/cotizaciones/:id', async (req, res) => {
   }
 });
 
-
-// =================== ENVÍO DE COTIZACIÓN POR CORREO (REEMPLAZA EL MÉTODO EXISTENTE) ===================
+// =================== ENVÍO DE COTIZACIÓN POR CORREO ===================
 app.post('/send-email', async (req, res) => {
   try {
     console.log('📧 Recibiendo solicitud de cotización por correo...');
@@ -1264,7 +1272,6 @@ app.post('/send-email', async (req, res) => {
       numeroCotizacion 
     } = req.body;
 
-    // ✅ Validación de campos obligatorios
     if (!email_del_destinatario || !asunto || !nombre || !dniRuc || !telefonoMovil || !contacto) {
       return res.status(400).json({ 
         success: false,
@@ -1279,7 +1286,6 @@ app.post('/send-email', async (req, res) => {
       });
     }
 
-    // ✅ Construir tabla HTML de productos
     const productosHTML = productos.map((p, index) => `
       <tr style="background: ${index % 2 === 0 ? '#ffffff' : '#f8f9fa'};">
         <td style="padding: 10px; border: 1px solid #ddd;">${p.categoria}</td>
@@ -1288,11 +1294,10 @@ app.post('/send-email', async (req, res) => {
       </tr>
     `).join('');
 
-    // ✅ Construir correo con SendGrid
     const emailOwner = process.env.EMAIL_OWNER || 'monica.romeroz.2003@gmail.com';
 
     const msg = {
-      to: [email_del_destinatario, emailOwner], // ✅ Envía al cliente Y a la empresa
+      to: [email_del_destinatario, emailOwner],
       from: {
         email: process.env.EMAIL_FROM || 'monica.romero.z@tecsup.edu.pe',
         name: 'Distribuidora Industrial S.A.C.'
@@ -1368,22 +1373,7 @@ app.post('/send-email', async (req, res) => {
   }
 });
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ===================  contar COTIZACION  ===================
-
-
+// =================== CONTAR COTIZACIONES ===================
 app.get('/cotizaciones/total', async (req, res) => {
   try {
     const total = await Cotizacion.countDocuments();
@@ -1393,22 +1383,13 @@ app.get('/cotizaciones/total', async (req, res) => {
   }
 });
 
-
-
-
 // =================== HISTORIAL DE COTIZACIONES ===================
-// =================== HISTORIAL DE COTIZACIONES ===================
-
-
-// =================== HISTORIAL DE COTIZACIONES ===================
-
 app.get('/cotizaciones', async (req, res) => {
   try {
     const cotizaciones = await Cotizacion.find()
       .sort({ fecha: -1 })
       .lean(); 
 
-    // ✅ Si hay userId, intentar poblar
     const cotizacionesConUsuario = await Promise.all(
       cotizaciones.map(async (cot) => {
         let usuario = null;
@@ -1429,7 +1410,7 @@ app.get('/cotizaciones', async (req, res) => {
           email: cot.email,
           telefonoMovil: cot.telefonoMovil,
           dniRuc: cot.dniRuc,
-          dni: cot.dniRuc, // Alias
+          dni: cot.dniRuc,
           contacto: cot.contacto || 'No especificado',
           mensaje: cot.mensaje || '',
           pdfBase64: cot.pdfBase64 || '',
@@ -1440,7 +1421,6 @@ app.get('/cotizaciones', async (req, res) => {
             cantidad: p.cantidad || 1,
             precio: p.precioUnitario || 0
           })),
-          // Info del usuario si existe
           usuario: usuario ? {
             nombre: usuario.nombre,
             email: usuario.email
@@ -1460,7 +1440,6 @@ app.get('/cotizaciones', async (req, res) => {
   }
 });
 
-
 app.get('/cotizaciones/usuario/:userId', async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1474,25 +1453,23 @@ app.get('/cotizaciones/usuario/:userId', async (req, res) => {
 
     console.log(`🔎 Buscando historial de cotizaciones del usuario: ${userId}`);
 
-    // Buscar cotizaciones del usuario con populate
     const cotizaciones = await Cotizacion.find({ userId })
       .sort({ fecha: -1 })
       .populate({
         path: 'productos.productoId',
-        model: 'Product', // Asegúrate de que coincida con el nombre de tu modelo
+        model: 'Product',
         select: 'name nombre image category description precio',
         strictPopulate: false
       })
       .select('fecha productos estado createdAt updatedAt')
       .lean();
 
-    // Ajustamos el formato de los productos
     cotizaciones.forEach(cot => {
       if (cot.productos && Array.isArray(cot.productos)) {
         cot.productos = cot.productos.map(p => {
           const producto = p.productoId || {};
           return {
-          nombre: p.equipo || p.nombre || p.name || 'Sin nombre',
+            nombre: p.equipo || p.nombre || p.name || 'Sin nombre',
             cantidad: p.cantidad || 1,
             precio: producto.precio || 0,
             imagen: producto.image || '',
@@ -1516,8 +1493,6 @@ app.get('/cotizaciones/usuario/:userId', async (req, res) => {
     });
   }
 });
-
-
 
 app.get('/cotizaciones/:cotizacionId', async (req, res) => {
   try {
@@ -1546,12 +1521,11 @@ app.get('/cotizaciones/:cotizacionId', async (req, res) => {
       });
     }
 
-    // Normaliza productos
     if (cotizacion.productos && Array.isArray(cotizacion.productos)) {
       cotizacion.productos = cotizacion.productos.map(p => {
         const producto = p.productoId || {};
         return {
-        nombre: p.equipo || p.nombre || p.name || 'Sin nombre',
+          nombre: p.equipo || p.nombre || p.name || 'Sin nombre',
           cantidad: p.cantidad || 1,
           precio: producto.precio || 0,
           imagen: producto.image || '',
@@ -1573,9 +1547,6 @@ app.get('/cotizaciones/:cotizacionId', async (req, res) => {
     });
   }
 });
-
-
-
 
 app.patch('/cotizaciones/:cotizacionId/estado', async (req, res) => {
   try {
@@ -1625,9 +1596,6 @@ app.patch('/cotizaciones/:cotizacionId/estado', async (req, res) => {
     });
   }
 });
-
-
-
 
 app.delete('/cotizaciones/:cotizacionId', async (req, res) => {
   try {
